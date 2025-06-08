@@ -318,9 +318,9 @@ func TestGetHealthIcon(t *testing.T) {
 		level    string
 		expected string
 	}{
-		{"Healthy", "Healthy", "✓"},
-		{"Degraded", "Degraded", "⚠"},
-		{"Critical", "Critical", "✗"},
+		{"Healthy", "Healthy", "🟢"},
+		{"Degraded", "Degraded", "🟡"},
+		{"Critical", "Critical", "🔴"},
 		{"unknown", "unknown", "⚪"},
 	}
 
@@ -342,12 +342,12 @@ func TestGetStatusIcon(t *testing.T) {
 		status   string
 		expected string
 	}{
-		{"Running", "Running", "✓"},
-		{"Completed", "Completed", "✓"},
-		{"CrashLoopBackOff", "CrashLoopBackOff", "✗"},
-		{"Error", "Error", "✗"},
-		{"Waiting", "Waiting", "⚠"},
-		{"Terminated", "Terminated", "✗"},
+		{"Running", "Running", "🟢"},
+		{"Completed", "Completed", "✅"},
+		{"CrashLoopBackOff", "CrashLoopBackOff", "🔴"},
+		{"Error", "Error", "🔴"},
+		{"Waiting", "Waiting", "🟡"},
+		{"Terminated", "Terminated", "🔴"},
 		{"unknown", "unknown", "⚪"},
 	}
 
