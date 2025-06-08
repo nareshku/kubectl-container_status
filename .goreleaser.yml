@@ -1,0 +1,81 @@
+project_name: kubectl-container-status
+
+env:
+  - CGO_ENABLED=0
+
+before:
+  hooks:
+    - go mod tidy
+    - go mod download
+
+builds:
+  - id: kubectl-container-status
+    binary: kubectl-container_status
+    main: ./cmd
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ignore:
+      - goos: windows
+        goarch: arm64
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+      - -X main.commit={{.Commit}}
+      - -X main.date={{.Date}}
+
+archives:
+  - id: kubectl-container-status
+    builds:
+      - kubectl-container-status
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        format: zip
+
+checksum:
+  name_template: 'checksums.txt'
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'
+      - '^ci:'
+      - Merge pull request
+      - Merge branch
+
+release:
+  github:
+    owner: nareshku
+    name: kubectl-container-status
+  draft: false
+  prerelease: auto
+  name_template: "{{.ProjectName}} v{{.Version}}"
+  header: |
+    ## kubectl container-status {{.Version}}
+    
+    A kubectl plugin for displaying container-level status and diagnostics.
+  footer: |
+    ## Installation
+    
+    Download the appropriate binary for your platform from the assets below.
+    
+    ### Install as kubectl plugin
+    ```bash
+    # Download the binary (replace with your platform)
+    curl -LO https://github.com/nareshku/kubectl-container-status/releases/download/{{.Tag}}/kubectl-container-status_{{.Version}}_linux_amd64.tar.gz
+    
+    # Extract and install
+    tar -xzf kubectl-container-status_{{.Version}}_linux_amd64.tar.gz
+    chmod +x kubectl-container_status
+    sudo mv kubectl-container_status /usr/local/bin/
+    
+    # Verify installation
+    kubectl container-status --help
+    ``` 
