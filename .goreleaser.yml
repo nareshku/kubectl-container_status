@@ -1,4 +1,6 @@
-project_name: kubectl-container-status
+version: 2
+
+project_name: kubectl-container_status
 
 env:
   - CGO_ENABLED=0
@@ -9,7 +11,7 @@ before:
     - go mod download
 
 builds:
-  - id: kubectl-container-status
+  - id: kubectl-container_status
     binary: kubectl-container_status
     main: ./cmd
     goos:
@@ -29,10 +31,12 @@ builds:
       - -X main.date={{.Date}}
 
 archives:
-  - id: kubectl-container-status
-    builds:
-      - kubectl-container-status
+  - id: kubectl-container_status
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format: tar.gz
+    files:
+      - README.md
+      - LICENSE
     format_overrides:
       - goos: windows
         format: zip
@@ -53,14 +57,27 @@ changelog:
 release:
   github:
     owner: nareshku
-    name: kubectl-container-status
+    name: kubectl-container_status
   draft: false
   prerelease: auto
   name_template: "{{.ProjectName}} v{{.Version}}"
   header: |
     ## kubectl container-status {{.Version}}
     
-    A kubectl plugin for displaying container-level status and diagnostics.
+    A kubectl plugin for displaying container-level status and diagnostics with enhanced visual design.
+    
+    ### ✨ Visual Enhancements
+    - 🟢🟡🔴 Modern emoji status indicators
+    - 📦 Bordered health status display  
+    - ⚠️🚨ℹ️ Categorized event icons
+    - 🎯 Professional header layout
+    
+    ### 🛠️ Core Features
+    - Smart container health analysis
+    - Cross-platform support
+    - Multiple output formats (table, JSON, YAML)
+    - Problematic pod filtering
+    - Resource usage visualization
   footer: |
     ## Installation
     
@@ -69,7 +86,7 @@ release:
     ### Install as kubectl plugin
     ```bash
     # Download the binary (replace with your platform)
-    curl -LO https://github.com/nareshku/kubectl-container-status/releases/download/{{.Tag}}/kubectl-container-status_{{.Version}}_linux_amd64.tar.gz
+    curl -LO https://github.com/nareshku/kubectl-container_status/releases/download/{{.Tag}}/kubectl-container-status_{{.Version}}_linux_amd64.tar.gz
     
     # Extract and install
     tar -xzf kubectl-container-status_{{.Version}}_linux_amd64.tar.gz
@@ -78,4 +95,8 @@ release:
     
     # Verify installation
     kubectl container-status --help
-    ``` 
+    ```
+    
+    ### Other platforms
+    - **macOS**: Replace `linux_amd64` with `darwin_amd64` or `darwin_arm64`
+    - **Windows**: Download the `.zip` file instead of `.tar.gz` 
