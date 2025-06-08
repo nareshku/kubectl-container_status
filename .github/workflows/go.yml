@@ -6,6 +6,9 @@ name: Go
 on:
   push:
     branches: [ "main" ]
+    tags:
+    - 'v*.*.*'
+
   pull_request:
     branches: [ "main" ]
 
@@ -26,3 +29,11 @@ jobs:
 
     - name: Test
       run: go test -v ./...
+
+    - name: GoReleaser
+      uses: goreleaser/goreleaser-action@v6
+      with:
+        version: latest
+        args: release --clean
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
