@@ -53,16 +53,77 @@ func (c *Collector) CollectPods(ctx context.Context, workload types.WorkloadInfo
 		pods = podList.Items
 	}
 
-	var podInfos []types.PodInfo
-	for _, pod := range pods {
-		podInfo, err := c.collectPodInfo(ctx, &pod, options)
+	// Collect bulk metrics and events for better performance
+	var bulkMetrics map[string]*types.PodMetrics
+	var bulkEvents map[string][]types.EventInfo
+	var err error
+
+	// For workload views or when explicitly requested, collect bulk metrics
+	if !options.SinglePodView || options.ShowResourceUsage {
+		bulkMetrics, err = c.collectBulkMetrics(ctx, workload.Namespace, pods)
 		if err != nil {
-			return nil, fmt.Errorf("failed to collect pod info for %s: %w", pod.Name, err)
+			fmt.Printf("Warning: Failed to collect bulk metrics: %v\n", err)
+			bulkMetrics = make(map[string]*types.PodMetrics)
 		}
-		podInfos = append(podInfos, *podInfo)
 	}
 
-	return podInfos, nil
+	// Collect bulk events when needed
+	needsEvents := options.ShowEvents
+	if needsEvents && len(pods) > 0 {
+		bulkEvents, err = c.collectBulkEvents(ctx, workload.Namespace, pods, options)
+		if err != nil {
+			fmt.Printf("Warning: Failed to collect bulk events: %v\n", err)
+			bulkEvents = make(map[string][]types.EventInfo)
+		}
+	}
+
+	// Process pods in parallel for better performance
+	type result struct {
+		index int
+		pod   *types.PodInfo
+		err   error
+	}
+
+	results := make(chan result, len(pods))
+
+	// Process each pod in a separate goroutine
+	for i, pod := range pods {
+		go func(index int, p corev1.Pod) {
+			// Get pre-collected metrics and events for this pod
+			var podMetrics *types.PodMetrics
+			var podEvents []types.EventInfo
+
+			if bulkMetrics != nil {
+				podMetrics = bulkMetrics[p.Name]
+			}
+			if bulkEvents != nil {
+				podEvents = bulkEvents[p.Name]
+			}
+
+			podInfo, err := c.collectPodInfoWithData(ctx, &p, options, podMetrics, podEvents)
+			results <- result{index: index, pod: podInfo, err: err}
+		}(i, pod)
+	}
+
+	// Collect results in order
+	podInfos := make([]*types.PodInfo, len(pods))
+	for i := 0; i < len(pods); i++ {
+		res := <-results
+		if res.err != nil {
+			return nil, fmt.Errorf("failed to collect pod info for pod %d: %w", res.index, res.err)
+		}
+		podInfos[res.index] = res.pod
+	}
+
+	// Convert to slice of values
+	var finalPods []types.PodInfo
+	for _, podInfo := range podInfos {
+		if podInfo != nil {
+			finalPods = append(finalPods, *podInfo)
+		}
+	}
+
+	return finalPods, nil
 }
 
 // collectPodInfo collects detailed information for a single pod
@@ -81,13 +142,23 @@ func (c *Collector) collectPodInfo(ctx context.Context, pod *corev1.Pod, options
 		Status:    status,
 	}
 
-	// Collect metrics if available
+	// Determine if this is a workload view (multiple pods) vs single pod view
+	isWorkloadView := !options.SinglePodView
+
+	// For workload view, only collect detailed data if specifically requested
+	needsMetrics := !isWorkloadView || options.ShowResourceUsage
+	needsEvents := options.ShowEvents || (!isWorkloadView && len(pod.OwnerReferences) == 0)
+	needsDetailedInfo := !isWorkloadView || options.Wide || options.ShowEnv
+
+	// Collect metrics only when needed
 	var podMetrics *types.PodMetrics
-	if c.metricsClient != nil {
+	if needsMetrics && c.metricsClient != nil {
 		metrics, err := c.collectPodMetrics(ctx, pod)
 		if err != nil {
 			// Metrics are optional, continue without them
-			fmt.Printf("Warning: Failed to collect metrics for pod %s: %v\n", pod.Name, err)
+			if !isWorkloadView {
+				fmt.Printf("Warning: Failed to collect metrics for pod %s: %v\n", pod.Name, err)
+			}
 		}
 		podMetrics = metrics
 		podInfo.Metrics = metrics
@@ -95,28 +166,32 @@ func (c *Collector) collectPodInfo(ctx context.Context, pod *corev1.Pod, options
 
 	// Collect container information - pass pod metrics for resource calculation
 	for _, container := range pod.Spec.InitContainers {
-		containerInfo := c.collectContainerInfo(container, pod, types.ContainerTypeInit, options, podMetrics)
+		containerInfo := c.collectContainerInfo(container, pod, types.ContainerTypeInit, options, podMetrics, needsDetailedInfo)
 		podInfo.InitContainers = append(podInfo.InitContainers, containerInfo)
 	}
 
 	for _, container := range pod.Spec.Containers {
-		containerInfo := c.collectContainerInfo(container, pod, types.ContainerTypeStandard, options, podMetrics)
+		containerInfo := c.collectContainerInfo(container, pod, types.ContainerTypeStandard, options, podMetrics, needsDetailedInfo)
 		podInfo.Containers = append(podInfo.Containers, containerInfo)
 	}
 
-	// Collect events
-	events, err := c.collectPodEvents(ctx, pod, options)
-	if err != nil {
-		// Events are optional, log warning but continue
-		fmt.Printf("Warning: Failed to collect events for pod %s: %v\n", pod.Name, err)
+	// Collect events only when needed
+	if needsEvents {
+		events, err := c.collectPodEvents(ctx, pod, options)
+		if err != nil {
+			// Events are optional, log warning but continue
+			if !isWorkloadView {
+				fmt.Printf("Warning: Failed to collect events for pod %s: %v\n", pod.Name, err)
+			}
+		}
+		podInfo.Events = events
 	}
-	podInfo.Events = events
 
 	return podInfo, nil
 }
 
 // collectContainerInfo collects information for a single container
-func (c *Collector) collectContainerInfo(container corev1.Container, pod *corev1.Pod, containerType types.ContainerType, options *types.Options, podMetrics *types.PodMetrics) types.ContainerInfo {
+func (c *Collector) collectContainerInfo(container corev1.Container, pod *corev1.Pod, containerType types.ContainerType, options *types.Options, podMetrics *types.PodMetrics, needsDetailedInfo bool) types.ContainerInfo {
 	containerInfo := types.ContainerInfo{
 		Name:    container.Name,
 		Type:    string(containerType),
@@ -201,12 +276,12 @@ func (c *Collector) collectContainerInfo(container corev1.Container, pod *corev1
 	containerInfo.Probes = c.collectProbeInfo(container, containerStatus)
 
 	// Collect volume information
-	if options.Wide {
+	if needsDetailedInfo && options.Wide {
 		containerInfo.Volumes = c.collectVolumeInfo(container, pod)
 	}
 
 	// Collect environment variables
-	if options.ShowEnv {
+	if needsDetailedInfo && options.ShowEnv {
 		containerInfo.Environment = c.collectEnvironmentInfo(container)
 	}
 
@@ -421,6 +496,7 @@ func (c *Collector) collectPodEvents(ctx context.Context, pod *corev1.Pod, optio
 				Type:    event.Type,
 				Reason:  event.Reason,
 				Message: event.Message,
+				PodName: pod.Name,
 			}
 			eventInfos = append(eventInfos, eventInfo)
 		}
@@ -572,4 +648,132 @@ func (c *Collector) formatMemoryUsage(usage string) string {
 	}
 
 	return fmt.Sprintf("%d", bytes)
+}
+
+// collectBulkMetrics collects metrics for all pods in one API call
+func (c *Collector) collectBulkMetrics(ctx context.Context, namespace string, pods []corev1.Pod) (map[string]*types.PodMetrics, error) {
+	if c.metricsClient == nil {
+		return nil, fmt.Errorf("metrics client not available")
+	}
+
+	// Get all pod metrics in the namespace
+	podMetricsList, err := c.metricsClient.MetricsV1beta1().PodMetricses(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a map for fast lookup
+	result := make(map[string]*types.PodMetrics)
+
+	// Convert to our format and index by pod name
+	for _, podMetrics := range podMetricsList.Items {
+		metrics := &types.PodMetrics{
+			Containers: make(map[string]types.ContainerMetrics),
+		}
+
+		// Store metrics for each container
+		for _, container := range podMetrics.Containers {
+			containerMetrics := types.ContainerMetrics{}
+			if cpu := container.Usage.Cpu(); cpu != nil {
+				containerMetrics.CPUUsage = cpu.String()
+			}
+			if memory := container.Usage.Memory(); memory != nil {
+				containerMetrics.MemoryUsage = memory.String()
+			}
+			metrics.Containers[container.Name] = containerMetrics
+		}
+
+		result[podMetrics.Name] = metrics
+	}
+
+	return result, nil
+}
+
+// collectBulkEvents collects events for all pods in one API call
+func (c *Collector) collectBulkEvents(ctx context.Context, namespace string, pods []corev1.Pod, options *types.Options) (map[string][]types.EventInfo, error) {
+	// Get all events in the namespace
+	events, err := c.clientset.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{})
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a map of pod names for fast lookup
+	podNames := make(map[string]bool)
+	for _, pod := range pods {
+		podNames[pod.Name] = true
+	}
+
+	// Determine time cutoff
+	var cutoffTime time.Time
+	if options.ShowEvents {
+		cutoffTime = time.Now().Add(-1 * time.Hour) // Last 1 hour when explicitly requested
+	} else {
+		cutoffTime = time.Now().Add(-5 * time.Minute) // Last 5 minutes for brief view
+	}
+
+	// Group events by pod name
+	result := make(map[string][]types.EventInfo)
+
+	for _, event := range events.Items {
+		// Check if this event is for one of our pods
+		if !podNames[event.InvolvedObject.Name] {
+			continue
+		}
+
+		// Use LastTimestamp if available (for repeated events), otherwise FirstTimestamp
+		eventTime := event.FirstTimestamp.Time
+		if !event.LastTimestamp.IsZero() {
+			eventTime = event.LastTimestamp.Time
+		}
+
+		if eventTime.After(cutoffTime) {
+			podName := event.InvolvedObject.Name
+			eventInfo := types.EventInfo{
+				Time:    eventTime,
+				Type:    event.Type,
+				Reason:  event.Reason,
+				Message: event.Message,
+				PodName: podName,
+			}
+
+			result[podName] = append(result[podName], eventInfo)
+		}
+	}
+
+	return result, nil
+}
+
+// collectPodInfoWithData collects pod information using pre-collected metrics and events
+func (c *Collector) collectPodInfoWithData(ctx context.Context, pod *corev1.Pod, options *types.Options, podMetrics *types.PodMetrics, podEvents []types.EventInfo) (*types.PodInfo, error) {
+	// Determine pod status - check for terminating state first
+	status := string(pod.Status.Phase)
+	if pod.DeletionTimestamp != nil {
+		status = "Terminating"
+	}
+
+	podInfo := &types.PodInfo{
+		Name:      pod.Name,
+		Namespace: pod.Namespace,
+		NodeName:  pod.Spec.NodeName,
+		Age:       time.Since(pod.CreationTimestamp.Time),
+		Status:    status,
+		Metrics:   podMetrics,
+		Events:    podEvents,
+	}
+
+	// Determine if detailed info is needed
+	needsDetailedInfo := options.SinglePodView || options.Wide || options.ShowEnv
+
+	// Collect container information - pass pod metrics for resource calculation
+	for _, container := range pod.Spec.InitContainers {
+		containerInfo := c.collectContainerInfo(container, pod, types.ContainerTypeInit, options, podMetrics, needsDetailedInfo)
+		podInfo.InitContainers = append(podInfo.InitContainers, containerInfo)
+	}
+
+	for _, container := range pod.Spec.Containers {
+		containerInfo := c.collectContainerInfo(container, pod, types.ContainerTypeStandard, options, podMetrics, needsDetailedInfo)
+		podInfo.Containers = append(podInfo.Containers, containerInfo)
+	}
+
+	return podInfo, nil
 }

@@ -9,10 +9,21 @@ A kubectl plugin that provides a **clean, human-friendly view** of container-lev
 - 📊 **Resource Usage**: Progress bars for CPU and memory usage
 - 🔄 **Probe Status**: Display liveness, readiness, and startup probe status
 - 📁 **Volume Information**: Show mounted volumes and their types (with `--wide`)
-- 🌈 **Colored Output**: Beautiful, colored terminal output with emoji indicators
+- 🌈 **Enhanced Visual Design**: Modern terminal output with emoji indicators, box-drawing characters, and intuitive color coding
 - 📝 **Multiple Formats**: Table, JSON, and YAML output formats
 - 🔍 **Problematic Container Detection**: Filter to show only containers and pods with issues (restarts, failures, terminating, etc.)
 - 🎯 **Flexible Targeting**: Support for Deployments, StatefulSets, DaemonSets, Jobs, and Pods
+
+## Visual Enhancements ✨
+
+This plugin features a modern, visually appealing interface designed for enhanced readability and quick issue identification:
+
+- **🎯 Enhanced Headers**: Professional layout with emoji icons and visual separators
+- **📦 Bordered Health Status**: Eye-catching health status boxes with Unicode box-drawing characters
+- **🟢 Intuitive Status Icons**: Color-coded circles for instant status recognition (🟢 healthy, 🟡 warning, 🔴 critical)
+- **📋 Smart Event Display**: Differentiated event icons (⚠️ warnings, 🚨 errors, ℹ️ info) for quick prioritization
+- **📊 Modern Progress Bars**: Clean resource usage visualization with color-coded thresholds
+- **🎨 Consistent Color Scheme**: Thoughtful use of colors and emoji for professional yet friendly appearance
 
 ## Installation
 
@@ -83,42 +94,47 @@ kubectl container-status deployment/coredns --output json
 | `--problematic`     | Show only problematic containers and pods (restarts, failures, terminating, etc.) |
 | `--sort`            | Sort by: name, restarts, cpu, memory, age                          |
 | `--env`             | Show key environment variables                                      |
+| `--events`          | Show recent Kubernetes events with enhanced visual indicators       |
 
 ## Output Examples
 
 ### Deployment View
 ```
-DEPLOYMENT: coredns   REPLICAS: 2/2   NAMESPACE: kube-system
-🟢 HEALTH: Healthy (all pods running, no recent restarts)
+────────────────────────────────────────────────────────────
+🎯 DEPLOYMENT: coredns   REPLICAS: 2/2   🏷️  NAMESPACE: kube-system
+┌─ HEALTH STATUS ──────────────────────────────────────┐
+│ 🟢 HEALTHY    all pods running normally           (💚)     │
+└─────────────────────────────────────────────────────┘
 
-SUMMARY:
-  • 2 Pods matched
-  • 2 Running, 0 Warning, 0 Failed
-  • Containers: coredns
-  • Total Restarts: 4 (last hour)
+WORKLOAD SUMMARY:
+  • 2 Pods: 2 Running, 0 Warning, 0 Failed
+  • Containers:
+        1) coredns
+           Image: registry.k8s.io/coredns/coredns:v1.11.1
+           Resources: CPU: 0m/0, Memory: 0Mi/170Mi
+           Usage: CPU ▓░░░░░░░ avg:0% ▓░░░░░░░ p90:0% ▓░░░░░░░ p99:0%
+                  Mem ▓░░░░░░░ avg:0% ▓░░░░░░░ p90:0% ▓░░░░░░░ p99:0%
+  • Total Restarts: 4
 
-POD: coredns-76f75df574-66d7q   NODE: kind-control-plane   AGE: 121d
-🟢 HEALTH: Healthy (all containers running normally)
++──────────────────────────┬──────────────────┬────────────┬───────┬──────────┬─────┬────────┬──────┐
+│           POD            │       NODE       │   STATUS   │ READY │ RESTARTS │ CPU │ MEMORY │ AGE  │
+├──────────────────────────┼──────────────────┼────────────┼───────┼──────────┼─────┼────────┼──────┤
+│ coredns-76f75df574-66d7q │ kind-control-... │ 🟢 Healthy │ 1/1   │        2 │ 0%  │ 0%     │ 121d │
+│ coredns-76f75df574-prcth │ kind-control-... │ 🟢 Healthy │ 1/1   │        2 │ 0%  │ 0%     │ 121d │
+└──────────────────────────┴──────────────────┴────────────┴───────┴──────────┴─────┴────────┴──────┘
 
-┌───────────┬────────────┬──────────┬────────────┬───────────┐
-│ CONTAINER │   STATUS   │ RESTARTS │ LAST STATE │ EXIT CODE │
-├───────────┼────────────┼──────────┼────────────┼───────────┤
-│ coredns   │ 🟢 Running │        2 │ Terminated │ -         │
-└───────────┴────────────┴──────────┴────────────┴───────────┘
-
-⚙️  Container: coredns
-  • Status:      🟢 Running (started 3d ago)
-  • Image:       registry.k8s.io/coredns/coredns:v1.11.1
-  • Resources:   CPU: ░░░░░░░░░░ 0% (0m/0)
-                 Mem: ░░░░░░░░░░ 0% (0Mi/170Mi)
-  • Liveness:    ✅ HTTP /health on port 8080 (passing)
-  • Readiness:   ✅ HTTP /ready on port 8181 (passing)
+📋 Workload Events (last 1h):
+  • ℹ️ Normal 5m: Started container coredns (Started) [coredns-76f75df574-66d7q]
+  • ⚠️ Warning 15m: Readiness probe failed (Unhealthy) [coredns-76f75df574-prcth]
 ```
 
 ### Brief Mode
 ```
-DEPLOYMENT: coredns   REPLICAS: 2/2   NAMESPACE: kube-system
-🟢 HEALTH: Healthy (all pods running, no recent restarts)
+────────────────────────────────────────────────────────────
+🎯 DEPLOYMENT: coredns   REPLICAS: 2/2   🏷️  NAMESPACE: kube-system
+┌─ HEALTH STATUS ──────────────────────────────────────┐
+│ 🟢 HEALTHY    all pods running normally           (💚)     │
+└─────────────────────────────────────────────────────┘
 
 ┌──────────────────────────┬────────────┬───────┬──────────┬──────┐
 │           POD            │   STATUS   │ READY │ RESTARTS │ AGE  │
@@ -132,9 +148,9 @@ DEPLOYMENT: coredns   REPLICAS: 2/2   NAMESPACE: kube-system
 
 | Status | Icon | Criteria |
 |--------|------|----------|
-| Healthy | 🟢 | All containers running, no restarts in 1h, all probes passing |
-| Degraded | 🟡 | Some containers restarting or probe failures |
-| Critical | 🔴 | Containers in CrashLoopBackOff or multiple failures |
+| Healthy | 🟢 💚 | All containers running, no restarts in 1h, all probes passing |
+| Degraded | 🟡 ⚠️ | Some containers restarting or probe failures |
+| Critical | 🔴 🚨 | Containers in CrashLoopBackOff or multiple failures |
 
 ## Container Status Icons
 
@@ -146,6 +162,15 @@ DEPLOYMENT: coredns   REPLICAS: 2/2   NAMESPACE: kube-system
 | Waiting | 🟡 | Container waiting to start |
 | Terminated | 🔴 | Container terminated unexpectedly |
 
+## Event Status Icons
+
+| Event Type | Icon | Description |
+|------------|------|-------------|
+| Warning | ⚠️ | Warning events that need attention |
+| Error | 🚨 | Critical error events requiring immediate action |
+| Normal | ℹ️ | Informational events about normal operations |
+| Other | 📝 | Other event types |
+
 ## Resource Usage Visualization
 
 Resource usage is displayed with 10-segment progress bars:
@@ -154,7 +179,7 @@ Resource usage is displayed with 10-segment progress bars:
 
 ```
 CPU: ▓▓▓░░░░░░░ 30% (60m/200m)
-Mem: ▓▓▓▓▓▓▓▓░░ 80% (1Gi/1.25Gi) ⚠️
+Mem: ▓▓▓▓▓▓▓▓░░ 80% (1Gi/1.25Gi) ⚠
 ```
 
 ## Problematic Container Detection

@@ -89,16 +89,25 @@ func (f *Formatter) formatWorkload(workload types.WorkloadInfo) error {
 		return f.printBriefSummary(workload)
 	}
 
-	// Print summary
-	f.printSummary(workload)
-
-	// Check if this is a single pod to avoid redundant headers
+	// Check if this is a single pod to determine display mode
 	isSinglePod := workload.Kind == "Pod" && len(workload.Pods) == 1
 
-	// Print each pod
-	for _, pod := range workload.Pods {
-		if err := f.formatPodWithContext(pod, isSinglePod); err != nil {
-			return err
+	if isSinglePod {
+		// Single pod: use detailed view (existing behavior)
+		f.printSummary(workload)
+		for _, pod := range workload.Pods {
+			if err := f.formatPodWithContext(pod, true); err != nil {
+				return err
+			}
+		}
+	} else {
+		// Multi-pod workload: use enhanced table view
+		f.printWorkloadSummary(workload)
+		f.printWorkloadTable(workload)
+
+		// Show aggregated events if requested
+		if f.options.ShowEvents {
+			f.printWorkloadEvents(workload)
 		}
 	}
 
@@ -124,10 +133,17 @@ func (f *Formatter) printWorkloadHeader(workload types.WorkloadInfo) {
 		replicasInfo = fmt.Sprintf("REPLICAS: %s", workload.Replicas)
 	}
 
+	// Create a visual separator line
+	separatorColor := color.New(color.FgHiBlack)
+	separator := separatorColor.Sprint(strings.Repeat("─", 60))
+
+	// Enhanced header with better visual hierarchy
+	fmt.Println(separator)
+
 	// For single pods, include NODE and AGE in the header to avoid redundancy
 	if workload.Kind == "Pod" && len(workload.Pods) == 1 {
 		pod := workload.Pods[0]
-		fmt.Printf("%s: %s   %s   NODE: %s   AGE: %s   NAMESPACE: %s\n",
+		fmt.Printf("🎯 %s: %s   %s   📍 NODE: %s   ⏰ AGE: %s   🏷️  NAMESPACE: %s\n",
 			headerColor.Sprintf("%s", strings.ToUpper(workload.Kind)),
 			headerColor.Sprintf("%s", workload.Name),
 			replicasInfo,
@@ -136,7 +152,7 @@ func (f *Formatter) printWorkloadHeader(workload types.WorkloadInfo) {
 			workload.Namespace,
 		)
 	} else {
-		fmt.Printf("%s: %s   %s   NAMESPACE: %s\n",
+		fmt.Printf("🎯 %s: %s   %s   🏷️  NAMESPACE: %s\n",
 			headerColor.Sprintf("%s", strings.ToUpper(workload.Kind)),
 			headerColor.Sprintf("%s", workload.Name),
 			replicasInfo,
@@ -144,11 +160,42 @@ func (f *Formatter) printWorkloadHeader(workload types.WorkloadInfo) {
 		)
 	}
 
-	fmt.Printf("%s HEALTH: %s (%s)\n\n",
+	// Enhanced health status with box drawing characters for emphasis
+	healthBorder := "┌─ HEALTH STATUS ──────────────────────────────────────┐"
+	healthBottom := "└─────────────────────────────────────────────────────┘"
+
+	fmt.Println(separatorColor.Sprint(healthBorder))
+	fmt.Printf("│ %s %s %s (%s) %s│\n",
 		healthIcon,
-		healthColor.Sprintf("%s", workload.Health.Level),
-		workload.Health.Reason,
+		healthColor.Sprintf("%-10s", strings.ToUpper(workload.Health.Level)),
+		healthColor.Sprintf("%-35s", workload.Health.Reason),
+		getHealthEmoji(workload.Health.Level),
+		strings.Repeat(" ", max(0, 8-len(getHealthEmoji(workload.Health.Level)))),
 	)
+	fmt.Println(separatorColor.Sprint(healthBottom))
+	fmt.Println()
+}
+
+// getHealthEmoji returns an additional emoji for health status
+func getHealthEmoji(level string) string {
+	switch level {
+	case string(types.HealthLevelHealthy):
+		return "💚"
+	case string(types.HealthLevelDegraded):
+		return "⚠️"
+	case string(types.HealthLevelCritical):
+		return "🚨"
+	default:
+		return "❓"
+	}
+}
+
+// max returns the maximum of two integers
+func max(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 // printSummary prints the workload summary
@@ -414,7 +461,7 @@ func (f *Formatter) printResourceUsage(resources types.ResourceInfo) {
 	memColor := f.getResourceColor(resources.MemPercentage)
 	memWarning := ""
 	if resources.MemPercentage > 80 {
-		memWarning = " ⚠️"
+		memWarning = " ⚠"
 	}
 	fmt.Printf("Mem: %s %.0f%% (%s/%s)%s\n",
 		memColor.Sprintf("%s", memBar),
@@ -481,20 +528,38 @@ func (f *Formatter) printEvents(events []types.EventInfo) {
 		timeWindow = "last 1h"
 	}
 
-	fmt.Printf("📋 Recent Events (%s):\n", timeWindow)
+	// Enhanced events section with better visual structure
+	eventsColor := color.New(color.FgHiBlue, color.Bold)
+	fmt.Printf("📋 %s (%s):\n", eventsColor.Sprint("Recent Events"), timeWindow)
 
 	if len(events) == 0 {
-		fmt.Printf("  • No events found in %s\n", timeWindow)
+		fmt.Printf("  • ✨ No events found in %s\n", timeWindow)
 	} else {
 		for _, event := range events {
 			age := time.Since(event.Time)
-			eventType := ""
+			eventIcon := ""
+			eventColor := color.New()
+
 			if event.Type == "Warning" {
-				eventType = "⚠️  "
+				eventIcon = "⚠️" // Warning triangle for warnings
+				eventColor = color.New(color.FgYellow, color.Bold)
+			} else if event.Type == "Error" {
+				eventIcon = "🚨" // Siren for errors
+				eventColor = color.New(color.FgRed, color.Bold)
 			} else if event.Type == "Normal" {
-				eventType = "ℹ️  "
+				eventIcon = "ℹ️" // Info icon
+				eventColor = color.New(color.FgCyan)
+			} else {
+				eventIcon = "📝" // Generic event icon
+				eventColor = color.New(color.FgWhite)
 			}
-			fmt.Printf("  • %s%s: %s (%s)\n", eventType, f.formatDuration(age), event.Message, event.Reason)
+
+			fmt.Printf("  • %s %s %s: %s (%s)\n",
+				eventIcon,
+				eventColor.Sprint(event.Type),
+				f.formatDuration(age),
+				event.Message,
+				event.Reason)
 		}
 	}
 	fmt.Println()
@@ -576,11 +641,11 @@ func (f *Formatter) getHealthColor(level string) *color.Color {
 
 	switch level {
 	case string(types.HealthLevelHealthy):
-		return color.New(color.FgGreen)
+		return color.New(color.FgHiGreen, color.Bold)
 	case string(types.HealthLevelDegraded):
-		return color.New(color.FgYellow)
+		return color.New(color.FgHiYellow, color.Bold)
 	case string(types.HealthLevelCritical):
-		return color.New(color.FgRed)
+		return color.New(color.FgHiRed, color.Bold)
 	default:
 		return color.New()
 	}
@@ -592,10 +657,418 @@ func (f *Formatter) getResourceColor(percentage float64) *color.Color {
 		return color.New()
 	}
 
-	if percentage > 90 {
-		return color.New(color.FgRed)
-	} else if percentage > 80 {
-		return color.New(color.FgYellow)
+	if percentage >= 90 {
+		return color.New(color.FgHiRed, color.Bold)
+	} else if percentage >= 70 {
+		return color.New(color.FgHiYellow, color.Bold)
 	}
-	return color.New()
+	return color.New(color.FgHiGreen, color.Bold)
+}
+
+// printWorkloadSummary prints enhanced summary for multi-pod workloads
+func (f *Formatter) printWorkloadSummary(workload types.WorkloadInfo) {
+	running := 0
+	warning := 0
+	failed := 0
+	totalRestarts := int32(0)
+
+	// Collect container information with aggregated data and usage stats
+	containerInfo := make(map[string]struct {
+		Image       string
+		Type        string
+		CPURequest  string
+		CPULimit    string
+		MemRequest  string
+		MemLimit    string
+		VolumeTypes map[string]bool
+		CPUUsages   []float64 // All CPU usage percentages for this container type
+		MemUsages   []float64 // All Memory usage percentages for this container type
+	})
+
+	for _, pod := range workload.Pods {
+		switch pod.Health.Level {
+		case string(types.HealthLevelHealthy):
+			running++
+		case string(types.HealthLevelDegraded):
+			warning++
+		case string(types.HealthLevelCritical):
+			failed++
+		}
+
+		// Collect container information
+		for _, container := range append(pod.InitContainers, pod.Containers...) {
+			totalRestarts += container.RestartCount
+
+			containerName := container.Name
+			if container.Type == string(types.ContainerTypeInit) {
+				containerName = fmt.Sprintf("[init] %s", container.Name)
+			}
+
+			// Use full image URL instead of just the short name
+			imageName := container.Image
+
+			// Initialize or update container info
+			if info, exists := containerInfo[containerName]; exists {
+				// Container already exists, add usage data and update volume types
+				info.CPUUsages = append(info.CPUUsages, container.Resources.CPUPercentage)
+				info.MemUsages = append(info.MemUsages, container.Resources.MemPercentage)
+				for _, volume := range container.Volumes {
+					info.VolumeTypes[volume.VolumeType] = true
+				}
+				containerInfo[containerName] = info
+			} else {
+				// New container
+				volumeTypes := make(map[string]bool)
+				for _, volume := range container.Volumes {
+					volumeTypes[volume.VolumeType] = true
+				}
+
+				containerInfo[containerName] = struct {
+					Image       string
+					Type        string
+					CPURequest  string
+					CPULimit    string
+					MemRequest  string
+					MemLimit    string
+					VolumeTypes map[string]bool
+					CPUUsages   []float64
+					MemUsages   []float64
+				}{
+					Image:       imageName,
+					Type:        container.Type,
+					CPURequest:  container.Resources.CPURequest,
+					CPULimit:    container.Resources.CPULimit,
+					MemRequest:  container.Resources.MemRequest,
+					MemLimit:    container.Resources.MemLimit,
+					VolumeTypes: volumeTypes,
+					CPUUsages:   []float64{container.Resources.CPUPercentage},
+					MemUsages:   []float64{container.Resources.MemPercentage},
+				}
+			}
+		}
+	}
+
+	fmt.Println("WORKLOAD SUMMARY:")
+	if f.options.Problematic {
+		fmt.Printf("  • %d Problematic pods shown\n", len(workload.Pods))
+	} else {
+		fmt.Printf("  • %d Pods: %d Running, %d Warning, %d Failed\n", len(workload.Pods), running, warning, failed)
+	}
+
+	// Sort container names for consistent output
+	var containerNames []string
+	for name := range containerInfo {
+		containerNames = append(containerNames, name)
+	}
+	sort.Strings(containerNames)
+
+	fmt.Printf("  • Containers:\n")
+	for i, containerName := range containerNames {
+		info := containerInfo[containerName]
+		fmt.Printf("        %d) %s\n", i+1, containerName)
+		fmt.Printf("           Image: %s\n", info.Image)
+
+		// Format resource allocation
+		resourceParts := []string{}
+		if info.CPURequest != "" || info.CPULimit != "" {
+			cpuInfo := "CPU: "
+			if info.CPURequest != "" && info.CPULimit != "" {
+				cpuInfo += fmt.Sprintf("%s/%s", info.CPURequest, info.CPULimit)
+			} else if info.CPULimit != "" {
+				cpuInfo += fmt.Sprintf("limit %s", info.CPULimit)
+			} else if info.CPURequest != "" {
+				cpuInfo += fmt.Sprintf("request %s", info.CPURequest)
+			}
+			resourceParts = append(resourceParts, cpuInfo)
+		}
+
+		if info.MemRequest != "" || info.MemLimit != "" {
+			memInfo := "Memory: "
+			if info.MemRequest != "" && info.MemLimit != "" {
+				memInfo += fmt.Sprintf("%s/%s", info.MemRequest, info.MemLimit)
+			} else if info.MemLimit != "" {
+				memInfo += fmt.Sprintf("limit %s", info.MemLimit)
+			} else if info.MemRequest != "" {
+				memInfo += fmt.Sprintf("request %s", info.MemRequest)
+			}
+			resourceParts = append(resourceParts, memInfo)
+		}
+
+		if len(resourceParts) > 0 {
+			fmt.Printf("           Resources: %s\n", strings.Join(resourceParts, ", "))
+		} else {
+			fmt.Printf("           Resources: No limits/requests set\n")
+		}
+
+		// Display resource utilization statistics
+		if len(info.CPUUsages) > 0 {
+			cpuStats := f.calculateResourceStats(info.CPUUsages)
+			memStats := f.calculateResourceStats(info.MemUsages)
+
+			fmt.Printf("           Usage: CPU %s avg:%s %s p90:%s %s p99:%s\n",
+				f.createMiniProgressBar(cpuStats.Average), f.formatUsageWithColor(cpuStats.Average),
+				f.createMiniProgressBar(cpuStats.P90), f.formatUsageWithColor(cpuStats.P90),
+				f.createMiniProgressBar(cpuStats.P99), f.formatUsageWithColor(cpuStats.P99))
+
+			fmt.Printf("                  Mem %s avg:%s %s p90:%s %s p99:%s\n",
+				f.createMiniProgressBar(memStats.Average), f.formatUsageWithColor(memStats.Average),
+				f.createMiniProgressBar(memStats.P90), f.formatUsageWithColor(memStats.P90),
+				f.createMiniProgressBar(memStats.P99), f.formatUsageWithColor(memStats.P99))
+		}
+
+		// Show volume types if any
+		if len(info.VolumeTypes) > 0 {
+			var volumes []string
+			for volType := range info.VolumeTypes {
+				volumes = append(volumes, volType)
+			}
+			sort.Strings(volumes)
+			fmt.Printf("           Volumes: %s\n", strings.Join(volumes, ", "))
+		}
+
+		if i < len(containerNames)-1 {
+			fmt.Println()
+		}
+	}
+
+	fmt.Printf("  • Total Restarts: %d\n\n", totalRestarts)
+}
+
+// printWorkloadTable prints a table view of pods in the workload
+func (f *Formatter) printWorkloadTable(workload types.WorkloadInfo) {
+	table := tablewriter.NewWriter(os.Stdout)
+	table.SetHeader([]string{"POD", "NODE", "STATUS", "READY", "RESTARTS", "CPU", "MEMORY", "AGE"})
+	table.SetAutoFormatHeaders(false)
+	table.SetBorder(true)
+
+	for _, pod := range workload.Pods {
+		ready := f.getReadyCount(pod)
+		totalContainers := len(pod.Containers)
+		age := f.formatDuration(pod.Age)
+
+		statusIcon := f.analyzer.GetHealthIcon(pod.Health.Level)
+		status := fmt.Sprintf("%s %s", statusIcon, pod.Health.Level)
+
+		totalRestarts := int32(0)
+		totalCPU := 0.0
+		totalMem := 0.0
+		for _, container := range append(pod.InitContainers, pod.Containers...) {
+			totalRestarts += container.RestartCount
+			totalCPU += container.Resources.CPUPercentage
+			totalMem += container.Resources.MemPercentage
+		}
+
+		// Truncate node name for better table formatting
+		node := pod.NodeName
+		if len(node) > 20 {
+			node = node[:17] + "..."
+		}
+
+		// Format CPU and Memory percentages
+		cpuStr := fmt.Sprintf("%.0f%%", totalCPU)
+		memStr := fmt.Sprintf("%.0f%%", totalMem)
+		if totalCPU > 90 {
+			cpuStr = color.RedString(cpuStr)
+		} else if totalCPU > 80 {
+			cpuStr = color.YellowString(cpuStr)
+		}
+		if totalMem > 90 {
+			memStr = color.RedString(memStr)
+		} else if totalMem > 80 {
+			memStr = color.YellowString(memStr)
+		}
+
+		table.Append([]string{
+			pod.Name,
+			node,
+			status,
+			fmt.Sprintf("%d/%d", ready, totalContainers),
+			fmt.Sprintf("%d", totalRestarts),
+			cpuStr,
+			memStr,
+			age,
+		})
+	}
+
+	table.Render()
+	fmt.Println()
+}
+
+// printWorkloadEvents prints aggregated events for the workload
+func (f *Formatter) printWorkloadEvents(workload types.WorkloadInfo) {
+	// Collect all events from all pods
+	var allEvents []types.EventInfo
+	for _, pod := range workload.Pods {
+		allEvents = append(allEvents, pod.Events...)
+	}
+
+	// Sort events by time (newest first)
+	sort.Slice(allEvents, func(i, j int) bool {
+		return allEvents[i].Time.After(allEvents[j].Time)
+	})
+
+	// Determine the time window message
+	timeWindow := "last 1h"
+
+	// Enhanced workload events section with better visual structure
+	eventsColor := color.New(color.FgHiBlue, color.Bold)
+	fmt.Printf("📋 %s (%s):\n", eventsColor.Sprint("Workload Events"), timeWindow)
+
+	if len(allEvents) == 0 {
+		fmt.Printf("  • ✨ No events found in %s\n", timeWindow)
+	} else {
+		// Show up to 10 most recent events
+		maxEvents := 10
+		if len(allEvents) > maxEvents {
+			allEvents = allEvents[:maxEvents]
+		}
+
+		for _, event := range allEvents {
+			age := time.Since(event.Time)
+			eventIcon := ""
+			eventColor := color.New()
+
+			if event.Type == "Warning" {
+				eventIcon = "⚠️" // Warning triangle for warnings
+				eventColor = color.New(color.FgYellow, color.Bold)
+			} else if event.Type == "Error" {
+				eventIcon = "🚨" // Siren for errors
+				eventColor = color.New(color.FgRed, color.Bold)
+			} else if event.Type == "Normal" {
+				eventIcon = "ℹ️" // Info icon
+				eventColor = color.New(color.FgCyan)
+			} else {
+				eventIcon = "📝" // Generic event icon
+				eventColor = color.New(color.FgWhite)
+			}
+
+			fmt.Printf("  • %s %s %s: %s (%s) [%s]\n",
+				eventIcon,
+				eventColor.Sprint(event.Type),
+				f.formatDuration(age),
+				event.Message,
+				event.Reason,
+				event.PodName)
+		}
+
+		if len(workload.Pods) > 0 {
+			totalEvents := 0
+			for _, pod := range workload.Pods {
+				totalEvents += len(pod.Events)
+			}
+			if totalEvents > maxEvents {
+				fmt.Printf("  💭 ... and %d more events\n", totalEvents-maxEvents)
+			}
+		}
+	}
+	fmt.Println()
+}
+
+// calculateResourceStats calculates resource utilization statistics
+func (f *Formatter) calculateResourceStats(usages []float64) struct {
+	Average float64
+	P90     float64
+	P99     float64
+} {
+	if len(usages) == 0 {
+		return struct {
+			Average float64
+			P90     float64
+			P99     float64
+		}{0, 0, 0}
+	}
+
+	sort.Float64s(usages)
+
+	// Calculate average
+	total := float64(0)
+	for _, usage := range usages {
+		total += usage
+	}
+	average := total / float64(len(usages))
+
+	// Calculate percentiles
+	n := len(usages)
+	p90Index := int(float64(n) * 0.9)
+	p99Index := int(float64(n) * 0.99)
+
+	// Ensure indices are within bounds
+	if p90Index >= n {
+		p90Index = n - 1
+	}
+	if p99Index >= n {
+		p99Index = n - 1
+	}
+
+	p90 := usages[p90Index]
+	p99 := usages[p99Index]
+
+	return struct {
+		Average float64
+		P90     float64
+		P99     float64
+	}{
+		Average: average,
+		P90:     p90,
+		P99:     p99,
+	}
+}
+
+// createMiniProgressBar creates a mini progress bar string
+func (f *Formatter) createMiniProgressBar(percentage float64) string {
+	if f.options.NoColor {
+		return fmt.Sprintf("%.0f%%", percentage)
+	}
+
+	// Create a clean gradient bar with simplified modern colors
+	segments := 8
+
+	var bar strings.Builder
+
+	// Create gradient based on overall percentage for each segment
+	for i := 0; i < segments; i++ {
+		segmentThreshold := float64(i+1) * 12.5 // Each segment represents 12.5%
+
+		if percentage >= segmentThreshold {
+			// Filled segment - use simplified color scheme
+			if percentage >= 90 {
+				// Critical: Red (90%+)
+				bar.WriteString(color.New(color.FgHiRed, color.Bold).Sprint("█"))
+			} else if percentage >= 70 {
+				// Warning: Yellow (70-90%)
+				bar.WriteString(color.New(color.FgHiYellow, color.Bold).Sprint("█"))
+			} else {
+				// Healthy: Green (0-70%)
+				bar.WriteString(color.New(color.FgHiGreen, color.Bold).Sprint("█"))
+			}
+		} else if percentage >= segmentThreshold-12.5 {
+			// Partially filled segment - same color scheme
+			if percentage >= 90 {
+				bar.WriteString(color.New(color.FgHiRed).Sprint("▓"))
+			} else if percentage >= 70 {
+				bar.WriteString(color.New(color.FgHiYellow).Sprint("▓"))
+			} else {
+				bar.WriteString(color.New(color.FgHiGreen).Sprint("▓"))
+			}
+		} else {
+			// Empty segment - subtle gray
+			bar.WriteString(color.New(color.FgHiBlack).Sprint("░"))
+		}
+	}
+
+	return bar.String()
+}
+
+// formatUsageWithColor formats a usage percentage with appropriate color
+func (f *Formatter) formatUsageWithColor(percentage float64) string {
+	if f.options.NoColor {
+		return fmt.Sprintf("%.0f%%", percentage)
+	}
+
+	if percentage >= 90 {
+		return color.New(color.FgHiRed, color.Bold).Sprintf("%.0f%%", percentage)
+	} else if percentage >= 70 {
+		return color.New(color.FgHiYellow, color.Bold).Sprintf("%.0f%%", percentage)
+	}
+	return color.New(color.FgHiGreen, color.Bold).Sprintf("%.0f%%", percentage)
 }

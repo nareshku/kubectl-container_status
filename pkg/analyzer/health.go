@@ -275,13 +275,13 @@ func (a *Analyzer) hasRecentRestarts(container types.ContainerInfo) bool {
 func (a *Analyzer) GetHealthIcon(level string) string {
 	switch level {
 	case string(types.HealthLevelHealthy):
-		return "🟢"
+		return "🟢" // Green circle - more visually appealing than plain checkmark
 	case string(types.HealthLevelDegraded):
-		return "🟡"
+		return "🟡" // Yellow circle - stands out better than plain warning triangle
 	case string(types.HealthLevelCritical):
-		return "🔴"
+		return "🔴" // Red circle - more prominent than plain X
 	default:
-		return "⚪"
+		return "⚪" // White circle for unknown state
 	}
 }
 
@@ -289,17 +289,17 @@ func (a *Analyzer) GetHealthIcon(level string) string {
 func (a *Analyzer) GetStatusIcon(status string) string {
 	switch status {
 	case string(types.ContainerStatusRunning):
-		return "🟢"
+		return "🟢" // Green circle - consistent with health status
 	case string(types.ContainerStatusCompleted):
-		return "✅"
+		return "✅" // Check mark with green background - success indication
 	case "CrashLoopBackOff", "Error":
-		return "🔴"
+		return "🔴" // Red circle - consistent critical status
 	case string(types.ContainerStatusWaiting):
-		return "🟡"
+		return "🟡" // Yellow circle - waiting/warning state
 	case string(types.ContainerStatusTerminated):
-		return "🔴"
+		return "🔴" // Red circle - terminated unexpectedly
 	default:
-		return "⚪"
+		return "⚪" // White circle for unknown state
 	}
 }
 
@@ -309,9 +309,9 @@ func (a *Analyzer) GetProbeIcon(passing bool, configured bool) string {
 		return ""
 	}
 	if passing {
-		return "✅"
+		return "✅" // Check mark with green background - probe passing
 	}
-	return "❌"
+	return "❌" // Cross mark with red background - probe failing
 }
 
 // IsContainerProblematic checks if a container has issues

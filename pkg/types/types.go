@@ -98,6 +98,7 @@ type EventInfo struct {
 	Type    string
 	Reason  string
 	Message string
+	PodName string // Track which pod this event belongs to
 }
 
 // PodMetrics represents pod-level metrics
@@ -127,20 +128,22 @@ type WorkloadInfo struct {
 
 // Options represents command-line flags and options
 type Options struct {
-	ResourceName  string
-	ResourceType  string
-	Namespace     string
-	AllNamespaces bool
-	Wide          bool
-	Brief         bool
-	OutputFormat  string // json, yaml, table
-	NoColor       bool
-	Problematic   bool
-	SortBy        string
-	ShowEnv       bool
-	ShowEvents    bool
-	OutputVersion string
-	Selector      string
+	ResourceName      string
+	ResourceType      string
+	Namespace         string
+	AllNamespaces     bool
+	Wide              bool
+	Brief             bool
+	OutputFormat      string // json, yaml, table
+	NoColor           bool
+	Problematic       bool
+	SortBy            string
+	ShowEnv           bool
+	ShowEvents        bool
+	ShowResourceUsage bool // Show detailed resource usage (CPU/Memory percentages)
+	SinglePodView     bool // Whether this is a single pod view (vs workload view)
+	OutputVersion     string
+	Selector          string
 
 	// Resource-specific flags
 	Deployment  string

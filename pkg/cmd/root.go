@@ -164,6 +164,14 @@ func runContainerStatus(options *types.Options) error {
 
 	// Collect data for all workloads
 	for i, workload := range workloads {
+		// Set optimization flags based on workload type
+		// Single pod view gets detailed data, workload views get optimized data
+		isSinglePod := workload.Kind == "Pod"
+		options.SinglePodView = isSinglePod
+
+		// Always collect resource usage now that we have efficient bulk collection
+		options.ShowResourceUsage = true
+
 		pods, err := collector.CollectPods(ctx, workload, options)
 		if err != nil {
 			return fmt.Errorf("failed to collect pod data: %w", err)

@@ -314,17 +314,18 @@ func TestGetHealthIcon(t *testing.T) {
 	analyzer := New()
 
 	tests := []struct {
+		name     string
 		level    string
 		expected string
 	}{
-		{string(types.HealthLevelHealthy), "🟢"},
-		{string(types.HealthLevelDegraded), "🟡"},
-		{string(types.HealthLevelCritical), "🔴"},
-		{"unknown", "⚪"},
+		{"Healthy", "Healthy", "✓"},
+		{"Degraded", "Degraded", "⚠"},
+		{"Critical", "Critical", "✗"},
+		{"unknown", "unknown", "⚪"},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.level, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			result := analyzer.GetHealthIcon(tt.level)
 			if result != tt.expected {
 				t.Errorf("expected icon %s, got %s", tt.expected, result)
@@ -337,20 +338,21 @@ func TestGetStatusIcon(t *testing.T) {
 	analyzer := New()
 
 	tests := []struct {
+		name     string
 		status   string
 		expected string
 	}{
-		{string(types.ContainerStatusRunning), "🟢"},
-		{string(types.ContainerStatusCompleted), "✅"},
-		{"CrashLoopBackOff", "🔴"},
-		{"Error", "🔴"},
-		{string(types.ContainerStatusWaiting), "🟡"},
-		{string(types.ContainerStatusTerminated), "🔴"},
-		{"unknown", "⚪"},
+		{"Running", "Running", "✓"},
+		{"Completed", "Completed", "✓"},
+		{"CrashLoopBackOff", "CrashLoopBackOff", "✗"},
+		{"Error", "Error", "✗"},
+		{"Waiting", "Waiting", "⚠"},
+		{"Terminated", "Terminated", "✗"},
+		{"unknown", "unknown", "⚪"},
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.status, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			result := analyzer.GetStatusIcon(tt.status)
 			if result != tt.expected {
 				t.Errorf("expected icon %s, got %s", tt.expected, result)
