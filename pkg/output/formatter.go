@@ -259,7 +259,7 @@ func (f *Formatter) formatPodWithContext(pod types.PodInfo, isSinglePod bool) er
 		}
 
 		// Print recent events
-		if len(pod.Events) > 0 {
+		if f.options.ShowEvents || len(pod.Events) > 0 {
 			f.printEvents(pod.Events)
 		}
 	}
@@ -383,7 +383,11 @@ func (f *Formatter) printContainerDetails(container types.ContainerInfo) {
 			fmt.Printf("  • Last Exit:   %s (exit code: %d)\n", container.TerminationReason, *container.ExitCode)
 		}
 		if container.RestartCount > 0 {
-			fmt.Printf("  • Restart Count: %d\n", container.RestartCount)
+			restartInfo := fmt.Sprintf("  • Restart Count: %d", container.RestartCount)
+			if container.LastRestartTime != nil {
+				restartInfo += fmt.Sprintf(" (last restart: %s ago)", f.formatDuration(time.Since(*container.LastRestartTime)))
+			}
+			fmt.Printf("%s\n", restartInfo)
 		}
 	}
 
@@ -471,10 +475,27 @@ func (f *Formatter) printEnvironment(env []types.EnvVar) {
 
 // printEvents prints recent events
 func (f *Formatter) printEvents(events []types.EventInfo) {
-	fmt.Printf("📋 Recent Events (last 5m):\n")
-	for _, event := range events {
-		age := time.Since(event.Time)
-		fmt.Printf("  • %s: %s\n", f.formatDuration(age), event.Message)
+	// Determine the time window message based on whether events flag is used
+	timeWindow := "last 5m"
+	if f.options.ShowEvents {
+		timeWindow = "last 1h"
+	}
+
+	fmt.Printf("📋 Recent Events (%s):\n", timeWindow)
+
+	if len(events) == 0 {
+		fmt.Printf("  • No events found in %s\n", timeWindow)
+	} else {
+		for _, event := range events {
+			age := time.Since(event.Time)
+			eventType := ""
+			if event.Type == "Warning" {
+				eventType = "⚠️  "
+			} else if event.Type == "Normal" {
+				eventType = "ℹ️  "
+			}
+			fmt.Printf("  • %s%s: %s (%s)\n", eventType, f.formatDuration(age), event.Message, event.Reason)
+		}
 	}
 	fmt.Println()
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/client-go/kubernetes"
@@ -80,40 +81,42 @@ func (c *Collector) collectPodInfo(ctx context.Context, pod *corev1.Pod, options
 		Status:    status,
 	}
 
-	// Collect container information
-	for _, container := range pod.Spec.InitContainers {
-		containerInfo := c.collectContainerInfo(container, pod, types.ContainerTypeInit, options)
-		podInfo.InitContainers = append(podInfo.InitContainers, containerInfo)
-	}
-
-	for _, container := range pod.Spec.Containers {
-		containerInfo := c.collectContainerInfo(container, pod, types.ContainerTypeStandard, options)
-		podInfo.Containers = append(podInfo.Containers, containerInfo)
-	}
-
-	// Collect events
-	events, err := c.collectPodEvents(ctx, pod)
-	if err != nil {
-		// Events are optional, log warning but continue
-		fmt.Printf("Warning: Failed to collect events for pod %s: %v\n", pod.Name, err)
-	}
-	podInfo.Events = events
-
 	// Collect metrics if available
+	var podMetrics *types.PodMetrics
 	if c.metricsClient != nil {
 		metrics, err := c.collectPodMetrics(ctx, pod)
 		if err != nil {
 			// Metrics are optional, continue without them
 			fmt.Printf("Warning: Failed to collect metrics for pod %s: %v\n", pod.Name, err)
 		}
+		podMetrics = metrics
 		podInfo.Metrics = metrics
 	}
+
+	// Collect container information - pass pod metrics for resource calculation
+	for _, container := range pod.Spec.InitContainers {
+		containerInfo := c.collectContainerInfo(container, pod, types.ContainerTypeInit, options, podMetrics)
+		podInfo.InitContainers = append(podInfo.InitContainers, containerInfo)
+	}
+
+	for _, container := range pod.Spec.Containers {
+		containerInfo := c.collectContainerInfo(container, pod, types.ContainerTypeStandard, options, podMetrics)
+		podInfo.Containers = append(podInfo.Containers, containerInfo)
+	}
+
+	// Collect events
+	events, err := c.collectPodEvents(ctx, pod, options)
+	if err != nil {
+		// Events are optional, log warning but continue
+		fmt.Printf("Warning: Failed to collect events for pod %s: %v\n", pod.Name, err)
+	}
+	podInfo.Events = events
 
 	return podInfo, nil
 }
 
 // collectContainerInfo collects information for a single container
-func (c *Collector) collectContainerInfo(container corev1.Container, pod *corev1.Pod, containerType types.ContainerType, options *types.Options) types.ContainerInfo {
+func (c *Collector) collectContainerInfo(container corev1.Container, pod *corev1.Pod, containerType types.ContainerType, options *types.Options, podMetrics *types.PodMetrics) types.ContainerInfo {
 	containerInfo := types.ContainerInfo{
 		Name:    container.Name,
 		Type:    string(containerType),
@@ -148,6 +151,11 @@ func (c *Collector) collectContainerInfo(container corev1.Container, pod *corev1
 		if containerStatus.State.Running != nil {
 			containerInfo.Status = string(types.ContainerStatusRunning)
 			containerInfo.StartedAt = &containerStatus.State.Running.StartedAt.Time
+
+			// Set last restart time if container has been restarted
+			if containerStatus.RestartCount > 0 {
+				containerInfo.LastRestartTime = &containerStatus.State.Running.StartedAt.Time
+			}
 		} else if containerStatus.State.Waiting != nil {
 			containerInfo.Status = containerStatus.State.Waiting.Reason
 			if containerInfo.Status == "" {
@@ -163,6 +171,11 @@ func (c *Collector) collectContainerInfo(container corev1.Container, pod *corev1
 			containerInfo.StartedAt = &containerStatus.State.Terminated.StartedAt.Time
 			containerInfo.FinishedAt = &containerStatus.State.Terminated.FinishedAt.Time
 			containerInfo.TerminationReason = containerStatus.State.Terminated.Reason
+
+			// For terminated containers, if they had restarts, the last restart would be when they started
+			if containerStatus.RestartCount > 0 {
+				containerInfo.LastRestartTime = &containerStatus.State.Terminated.StartedAt.Time
+			}
 		}
 
 		// Last state information and exit code from previous termination
@@ -181,8 +194,8 @@ func (c *Collector) collectContainerInfo(container corev1.Container, pod *corev1
 		containerInfo.Status = string(types.ContainerStatusUnknown)
 	}
 
-	// Collect resource information
-	containerInfo.Resources = c.collectResourceInfo(container)
+	// Collect resource information with metrics
+	containerInfo.Resources = c.collectResourceInfo(container, container.Name, podMetrics)
 
 	// Collect probe information
 	containerInfo.Probes = c.collectProbeInfo(container, containerStatus)
@@ -201,33 +214,54 @@ func (c *Collector) collectContainerInfo(container corev1.Container, pod *corev1
 }
 
 // collectResourceInfo collects resource requests, limits, and usage
-func (c *Collector) collectResourceInfo(container corev1.Container) types.ResourceInfo {
+func (c *Collector) collectResourceInfo(container corev1.Container, containerName string, podMetrics *types.PodMetrics) types.ResourceInfo {
 	resourceInfo := types.ResourceInfo{}
 
 	if container.Resources.Requests != nil {
 		if cpu := container.Resources.Requests.Cpu(); cpu != nil {
-			resourceInfo.CPURequest = cpu.String()
+			resourceInfo.CPURequest = c.formatCPUUsage(cpu.String())
 		}
 		if memory := container.Resources.Requests.Memory(); memory != nil {
-			resourceInfo.MemRequest = memory.String()
+			resourceInfo.MemRequest = c.formatMemoryUsage(memory.String())
 		}
 	}
 
 	if container.Resources.Limits != nil {
 		if cpu := container.Resources.Limits.Cpu(); cpu != nil {
-			resourceInfo.CPULimit = cpu.String()
+			resourceInfo.CPULimit = c.formatCPUUsage(cpu.String())
 		}
 		if memory := container.Resources.Limits.Memory(); memory != nil {
-			resourceInfo.MemLimit = memory.String()
+			resourceInfo.MemLimit = c.formatMemoryUsage(memory.String())
 		}
 	}
 
-	// Usage information would come from metrics server
-	// This is a placeholder - actual implementation would use metrics client
+	// Initialize with default values
 	resourceInfo.CPUUsage = "0m"
 	resourceInfo.CPUPercentage = 0.0
 	resourceInfo.MemUsage = "0Mi"
 	resourceInfo.MemPercentage = 0.0
+
+	// Use actual metrics if available
+	if podMetrics != nil {
+		containerMetrics := c.findContainerMetrics(podMetrics, containerName)
+		if containerMetrics != nil {
+			// Set CPU usage and calculate percentage
+			if containerMetrics.CPUUsage != "" {
+				resourceInfo.CPUUsage = c.formatCPUUsage(containerMetrics.CPUUsage)
+				if resourceInfo.CPULimit != "" {
+					resourceInfo.CPUPercentage = c.calculateCPUPercentage(containerMetrics.CPUUsage, resourceInfo.CPULimit)
+				}
+			}
+
+			// Set memory usage and calculate percentage
+			if containerMetrics.MemoryUsage != "" {
+				resourceInfo.MemUsage = c.formatMemoryUsage(containerMetrics.MemoryUsage)
+				if resourceInfo.MemLimit != "" {
+					resourceInfo.MemPercentage = c.calculateMemoryPercentage(containerMetrics.MemoryUsage, resourceInfo.MemLimit)
+				}
+			}
+		}
+	}
 
 	return resourceInfo
 }
@@ -355,7 +389,7 @@ func (c *Collector) isSensitiveEnvVar(name string) bool {
 }
 
 // collectPodEvents collects recent events for a pod
-func (c *Collector) collectPodEvents(ctx context.Context, pod *corev1.Pod) ([]types.EventInfo, error) {
+func (c *Collector) collectPodEvents(ctx context.Context, pod *corev1.Pod, options *types.Options) ([]types.EventInfo, error) {
 	events, err := c.clientset.CoreV1().Events(pod.Namespace).List(ctx, metav1.ListOptions{
 		FieldSelector: "involvedObject.name=" + pod.Name,
 	})
@@ -364,12 +398,26 @@ func (c *Collector) collectPodEvents(ctx context.Context, pod *corev1.Pod) ([]ty
 	}
 
 	var eventInfos []types.EventInfo
-	cutoffTime := time.Now().Add(-5 * time.Minute) // Last 5 minutes
+
+	// Default: last 5 minutes for automatic event display
+	// With --events flag: last 1 hour for comprehensive view
+	var cutoffTime time.Time
+	if options.ShowEvents {
+		cutoffTime = time.Now().Add(-1 * time.Hour) // Last 1 hour when explicitly requested
+	} else {
+		cutoffTime = time.Now().Add(-5 * time.Minute) // Last 5 minutes for brief view
+	}
 
 	for _, event := range events.Items {
-		if event.FirstTimestamp.Time.After(cutoffTime) {
+		// Use LastTimestamp if available (for repeated events), otherwise FirstTimestamp
+		eventTime := event.FirstTimestamp.Time
+		if !event.LastTimestamp.IsZero() {
+			eventTime = event.LastTimestamp.Time
+		}
+
+		if eventTime.After(cutoffTime) {
 			eventInfo := types.EventInfo{
-				Time:    event.FirstTimestamp.Time,
+				Time:    eventTime,
 				Type:    event.Type,
 				Reason:  event.Reason,
 				Message: event.Message,
@@ -392,18 +440,136 @@ func (c *Collector) collectPodMetrics(ctx context.Context, pod *corev1.Pod) (*ty
 		return nil, err
 	}
 
-	metrics := &types.PodMetrics{}
+	metrics := &types.PodMetrics{
+		Containers: make(map[string]types.ContainerMetrics),
+	}
 
+	// Store metrics for each container
 	for _, container := range podMetrics.Containers {
+		containerMetrics := types.ContainerMetrics{}
 		if cpu := container.Usage.Cpu(); cpu != nil {
-			metrics.CPUUsage = cpu.String()
+			containerMetrics.CPUUsage = cpu.String()
 		}
 		if memory := container.Usage.Memory(); memory != nil {
-			metrics.MemoryUsage = memory.String()
+			containerMetrics.MemoryUsage = memory.String()
 		}
-		// For simplicity, just use the first container's metrics
-		break
+		metrics.Containers[container.Name] = containerMetrics
 	}
 
 	return metrics, nil
+}
+
+// findContainerMetrics finds metrics for a specific container in pod metrics
+func (c *Collector) findContainerMetrics(podMetrics *types.PodMetrics, containerName string) *types.ContainerMetrics {
+	if podMetrics == nil || podMetrics.Containers == nil {
+		return nil
+	}
+
+	if metrics, exists := podMetrics.Containers[containerName]; exists {
+		return &metrics
+	}
+
+	return nil
+}
+
+// calculateCPUPercentage calculates CPU usage percentage
+func (c *Collector) calculateCPUPercentage(usage, limit string) float64 {
+	usageQuantity, err := resource.ParseQuantity(usage)
+	if err != nil {
+		return 0.0
+	}
+
+	limitQuantity, err := resource.ParseQuantity(limit)
+	if err != nil {
+		return 0.0
+	}
+
+	if limitQuantity.IsZero() {
+		return 0.0
+	}
+
+	// Convert to milliCPUs for calculation
+	usageMilliCPU := usageQuantity.MilliValue()
+	limitMilliCPU := limitQuantity.MilliValue()
+
+	percentage := float64(usageMilliCPU) / float64(limitMilliCPU) * 100
+	return percentage
+}
+
+// calculateMemoryPercentage calculates memory usage percentage
+func (c *Collector) calculateMemoryPercentage(usage, limit string) float64 {
+	usageQuantity, err := resource.ParseQuantity(usage)
+	if err != nil {
+		return 0.0
+	}
+
+	limitQuantity, err := resource.ParseQuantity(limit)
+	if err != nil {
+		return 0.0
+	}
+
+	if limitQuantity.IsZero() {
+		return 0.0
+	}
+
+	// Convert to bytes for calculation
+	usageBytes := usageQuantity.Value()
+	limitBytes := limitQuantity.Value()
+
+	percentage := float64(usageBytes) / float64(limitBytes) * 100
+	return percentage
+}
+
+// formatCPUUsage formats CPU usage to human-readable format (like kubectl top)
+func (c *Collector) formatCPUUsage(usage string) string {
+	quantity, err := resource.ParseQuantity(usage)
+	if err != nil {
+		return usage
+	}
+
+	// Convert to millicores
+	milliCPU := quantity.MilliValue()
+
+	if milliCPU >= 1000 {
+		// Show as cores if >= 1 core
+		cores := float64(milliCPU) / 1000.0
+		if cores >= 10 {
+			return fmt.Sprintf("%.0f", cores)
+		}
+		return fmt.Sprintf("%.1f", cores)
+	}
+
+	// Show as millicores
+	return fmt.Sprintf("%dm", milliCPU)
+}
+
+// formatMemoryUsage formats memory usage to human-readable format (like kubectl top)
+func (c *Collector) formatMemoryUsage(usage string) string {
+	quantity, err := resource.ParseQuantity(usage)
+	if err != nil {
+		return usage
+	}
+
+	// Get bytes value
+	bytes := quantity.Value()
+
+	// Convert to appropriate unit
+	const (
+		Ki = 1024
+		Mi = Ki * 1024
+		Gi = Mi * 1024
+		Ti = Gi * 1024
+	)
+
+	if bytes >= Ti {
+		return fmt.Sprintf("%.1fTi", float64(bytes)/Ti)
+	} else if bytes >= Gi {
+		return fmt.Sprintf("%.1fGi", float64(bytes)/Gi)
+	} else if bytes >= Mi {
+		return fmt.Sprintf("%dMi", bytes/Mi)
+	} else if bytes >= Ki {
+		return fmt.Sprintf("%dKi", bytes/Ki)
+	}
+
+	return fmt.Sprintf("%d", bytes)
 }

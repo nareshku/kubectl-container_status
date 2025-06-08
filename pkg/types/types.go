@@ -15,6 +15,7 @@ type ContainerInfo struct {
 	ExitCode          *int32
 	StartedAt         *time.Time
 	FinishedAt        *time.Time
+	LastRestartTime   *time.Time
 	Image             string
 	Command           []string
 	Args              []string
@@ -103,6 +104,13 @@ type EventInfo struct {
 type PodMetrics struct {
 	CPUUsage    string
 	MemoryUsage string
+	Containers  map[string]ContainerMetrics
+}
+
+// ContainerMetrics represents container-level metrics
+type ContainerMetrics struct {
+	CPUUsage    string
+	MemoryUsage string
 }
 
 // WorkloadInfo represents workload information
@@ -130,6 +138,7 @@ type Options struct {
 	Problematic   bool
 	SortBy        string
 	ShowEnv       bool
+	ShowEvents    bool
 	OutputVersion string
 	Selector      string
 

@@ -49,7 +49,10 @@ Examples:
   kubectl container-status --selector app=web,tier=backend
 
   # Show only problematic containers and pods (restarts, failures, terminating, etc.)
-  kubectl container-status --problematic`,
+  kubectl container-status --problematic
+  
+  # Show recent Kubernetes events (last 1 hour)
+  kubectl container-status --events pod/mypod-xyz`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
@@ -82,6 +85,7 @@ Examples:
 	cmd.Flags().BoolVar(&options.Problematic, "problematic", false, "Show only problematic containers and pods (restarts, failures, terminating, etc.)")
 	cmd.Flags().StringVar(&options.SortBy, "sort", "name", "Sort by: name, restarts, cpu, memory, age")
 	cmd.Flags().BoolVar(&options.ShowEnv, "env", false, "Show key environment variables")
+	cmd.Flags().BoolVar(&options.ShowEvents, "events", false, "Show recent Kubernetes events related to the pods")
 	cmd.Flags().StringVar(&options.OutputVersion, "output-version", "v2", "Output format version (v1=basic, v2=enhanced)")
 
 	// Mark some flags as mutually exclusive
