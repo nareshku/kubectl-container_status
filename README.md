@@ -63,6 +63,10 @@ kubectl container-status pod/mypod-xyz
 kubectl container-status --deployment web-backend
 kubectl container-status --selector app=web,tier=backend
 
+# Using different contexts
+kubectl container-status --context prod-cluster --deployment web-backend
+kubectl container-status --context staging-cluster --problematic
+
 # Show only problematic containers and pods (restarts, failures, terminating, etc.)
 kubectl container-status --problematic
 
@@ -86,6 +90,7 @@ kubectl container-status deployment/coredns --output json
 | `--daemonset`       | Show container status for all pods in the given DaemonSet           |
 | `-l`, `--selector`  | Label selector to fetch and group matching pods                     |
 | `-n`, `--namespace` | Target namespace (defaults to current context)                      |
+| `--context`         | The name of the kubeconfig context to use                           |
 | `--all-namespaces`  | Show containers across all namespaces                               |
 | `--wide`            | Show extended info: volumes, env vars, detailed probes              |
 | `--brief`           | Print just the summary table (no per-container details)             |

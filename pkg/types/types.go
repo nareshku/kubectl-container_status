@@ -131,6 +131,7 @@ type Options struct {
 	ResourceName      string
 	ResourceType      string
 	Namespace         string
+	Context           string // Kubernetes context to use
 	AllNamespaces     bool
 	Wide              bool
 	Brief             bool

@@ -77,6 +77,7 @@ Examples:
 	cmd.Flags().StringVar(&options.DaemonSet, "daemonset", "", "Show container status for all pods in the given DaemonSet")
 	cmd.Flags().StringVarP(&options.Selector, "selector", "l", "", "Label selector to fetch and group matching pods")
 	cmd.Flags().StringVarP(&options.Namespace, "namespace", "n", "", "Target namespace (defaults to current context)")
+	cmd.Flags().StringVar(&options.Context, "context", "", "The name of the kubeconfig context to use")
 	cmd.Flags().BoolVar(&options.AllNamespaces, "all-namespaces", false, "Show containers across all namespaces")
 	cmd.Flags().BoolVar(&options.Wide, "wide", false, "Show extended info: volumes, env vars, detailed probes")
 	cmd.Flags().BoolVar(&options.Brief, "brief", false, "Print just the summary table (no per-container details)")
@@ -112,9 +113,14 @@ func runContainerStatus(options *types.Options) error {
 	}
 
 	// Initialize Kubernetes clients
+	configOverrides := &clientcmd.ConfigOverrides{}
+	if options.Context != "" {
+		configOverrides.CurrentContext = options.Context
+	}
+
 	config, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		clientcmd.NewDefaultClientConfigLoadingRules(),
-		&clientcmd.ConfigOverrides{},
+		configOverrides,
 	).ClientConfig()
 	if err != nil {
 		return fmt.Errorf("failed to create kubernetes config: %w", err)
@@ -136,7 +142,7 @@ func runContainerStatus(options *types.Options) error {
 	if options.Namespace == "" && !options.AllNamespaces {
 		namespace, _, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 			clientcmd.NewDefaultClientConfigLoadingRules(),
-			&clientcmd.ConfigOverrides{},
+			configOverrides,
 		).Namespace()
 		if err != nil {
 			return fmt.Errorf("failed to get current namespace: %w", err)
