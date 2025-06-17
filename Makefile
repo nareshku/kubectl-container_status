@@ -2,7 +2,7 @@
 
 # Variables
 BINARY_NAME=kubectl-container_status
-VERSION?=v0.1.0
+VERSION?=v0.1.1
 BUILD_DIR=bin
 INSTALL_DIR=/usr/local/bin
 
