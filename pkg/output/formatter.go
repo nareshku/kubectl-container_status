@@ -271,11 +271,13 @@ func (f *Formatter) printBriefSummary(workload types.WorkloadInfo) error {
 			totalRestarts += container.RestartCount
 		}
 
+		lastRestartTime := f.getLastRestartTime(pod)
+
 		table.Append([]string{
 			pod.Name,
 			status,
 			fmt.Sprintf("%d/%d", ready, totalContainers),
-			fmt.Sprintf("%d", totalRestarts),
+			f.formatRestartInfo(totalRestarts, lastRestartTime),
 			age,
 		})
 	}
@@ -379,7 +381,7 @@ func (f *Formatter) addContainerRow(table *tablewriter.Table, container types.Co
 	table.Append([]string{
 		name,
 		status,
-		fmt.Sprintf("%d", container.RestartCount),
+		f.formatRestartInfo(container.RestartCount, container.LastRestartTime),
 		container.LastState,
 		exitCode,
 	})
@@ -615,6 +617,35 @@ func (f *Formatter) formatDuration(d time.Duration) string {
 	} else {
 		return fmt.Sprintf("%dd", int(d.Hours()/24))
 	}
+}
+
+// formatRestartInfo formats restart count with last restart time
+func (f *Formatter) formatRestartInfo(restartCount int32, lastRestartTime *time.Time) string {
+	if restartCount == 0 {
+		return "0"
+	}
+
+	restartStr := fmt.Sprintf("%d", restartCount)
+	if lastRestartTime != nil {
+		restartStr += fmt.Sprintf(" (last %s ago)", f.formatDuration(time.Since(*lastRestartTime)))
+	}
+
+	return restartStr
+}
+
+// getLastRestartTime returns the most recent restart time from all containers in a pod
+func (f *Formatter) getLastRestartTime(pod types.PodInfo) *time.Time {
+	var mostRecent *time.Time
+
+	for _, container := range append(pod.InitContainers, pod.Containers...) {
+		if container.LastRestartTime != nil {
+			if mostRecent == nil || container.LastRestartTime.After(*mostRecent) {
+				mostRecent = container.LastRestartTime
+			}
+		}
+	}
+
+	return mostRecent
 }
 
 // createProgressBar creates a progress bar string
@@ -858,6 +889,8 @@ func (f *Formatter) printWorkloadTable(workload types.WorkloadInfo) {
 			totalMem += container.Resources.MemPercentage
 		}
 
+		lastRestartTime := f.getLastRestartTime(pod)
+
 		// Truncate node name for better table formatting
 		node := pod.NodeName
 		if len(node) > 20 {
@@ -883,7 +916,7 @@ func (f *Formatter) printWorkloadTable(workload types.WorkloadInfo) {
 			node,
 			status,
 			fmt.Sprintf("%d/%d", ready, totalContainers),
-			fmt.Sprintf("%d", totalRestarts),
+			f.formatRestartInfo(totalRestarts, lastRestartTime),
 			cpuStr,
 			memStr,
 			age,
