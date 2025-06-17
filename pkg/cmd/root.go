@@ -21,10 +21,9 @@ import (
 // NewContainerStatusCommand creates the root command
 func NewContainerStatusCommand() *cobra.Command {
 	options := &types.Options{
-		Namespace:     "",
-		OutputFormat:  "table",
-		SortBy:        "name",
-		OutputVersion: "v2",
+		Namespace:    "",
+		OutputFormat: "table",
+		SortBy:       "name",
 	}
 
 	cmd := &cobra.Command{
@@ -87,7 +86,6 @@ Examples:
 	cmd.Flags().StringVar(&options.SortBy, "sort", "name", "Sort by: name, restarts, cpu, memory, age")
 	cmd.Flags().BoolVar(&options.ShowEnv, "env", false, "Show key environment variables")
 	cmd.Flags().BoolVar(&options.ShowEvents, "events", false, "Show recent Kubernetes events related to the pods")
-	cmd.Flags().StringVar(&options.OutputVersion, "output-version", "v2", "Output format version (v1=basic, v2=enhanced)")
 
 	// Mark some flags as mutually exclusive
 	cmd.MarkFlagsMutuallyExclusive("deployment", "statefulset", "job", "daemonset", "selector")

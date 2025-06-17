@@ -143,7 +143,6 @@ type Options struct {
 	ShowEvents        bool
 	ShowResourceUsage bool // Show detailed resource usage (CPU/Memory percentages)
 	SinglePodView     bool // Whether this is a single pod view (vs workload view)
-	OutputVersion     string
 	Selector          string
 
 	// Resource-specific flags
