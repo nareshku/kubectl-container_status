@@ -131,6 +131,7 @@ WORKLOAD SUMMARY:
 📋 Workload Events (last 1h):
   • ℹ️ Normal 5m: Started container coredns (Started) [coredns-76f75df574-66d7q]
   • ⚠️ Warning 15m: Readiness probe failed (Unhealthy) [coredns-76f75df574-prcth]
+  • ⚠️ Warning 24m: 0/2778 nodes are available: 1 node(s) had untolerated taint (FailedScheduling) [coredns-76f75df574-abc123]
 ```
 
 ### Brief Mode
@@ -195,6 +196,22 @@ The restart column now shows both the restart count and the time of the last res
 - **With restarts**: `3 (last 2h ago)` - shows count and when the last restart occurred
 
 This enhancement helps distinguish between historical issues (restarts that happened days ago) and current problems (recent restarts), making it easier to assess the severity and urgency of container issues.
+
+## Comprehensive Event Collection
+
+The tool captures both legacy and modern Kubernetes event formats, ensuring critical events like `FailedScheduling` are never missed:
+
+**Event Types Captured:**
+- **Scheduling Events**: `FailedScheduling`, `Scheduled`, `FailedMount`, etc.
+- **Container Events**: `Pulled`, `Created`, `Started`, `Killing`, `Unhealthy`, etc.  
+- **Pod Events**: `Created`, `Started`, `Killing`, etc.
+- **Network Events**: `CNI` related events, `NetworkNotReady`, etc.
+
+**Event Format Support:**
+- **Legacy Events**: Uses `firstTimestamp` and `lastTimestamp` fields
+- **Modern Events**: Uses `eventTime` and `series.lastObservedTime` fields for aggregated events
+
+This ensures that important troubleshooting information like pod scheduling failures, image pull issues, and resource constraints are always visible.
 
 ## Problematic Container Detection
 

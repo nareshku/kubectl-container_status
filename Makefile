@@ -1,7 +1,7 @@
 # kubectl container-status Makefile
 
 # Variables
-BINARY_NAME=kubectl-container-status
+BINARY_NAME=kubectl-container_status
 VERSION?=v0.1.0
 BUILD_DIR=bin
 INSTALL_DIR=/usr/local/bin

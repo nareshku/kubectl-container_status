@@ -484,10 +484,22 @@ func (c *Collector) collectPodEvents(ctx context.Context, pod *corev1.Pod, optio
 	}
 
 	for _, event := range events.Items {
-		// Use LastTimestamp if available (for repeated events), otherwise FirstTimestamp
-		eventTime := event.FirstTimestamp.Time
-		if !event.LastTimestamp.IsZero() {
-			eventTime = event.LastTimestamp.Time
+		// Handle both old and new event formats
+		var eventTime time.Time
+
+		// For newer events, use EventTime or Series.LastObservedTime
+		if !event.EventTime.IsZero() {
+			eventTime = event.EventTime.Time
+			// If there's a series with more recent observation, use that
+			if event.Series != nil && !event.Series.LastObservedTime.IsZero() {
+				eventTime = event.Series.LastObservedTime.Time
+			}
+		} else {
+			// Fallback to older format: use LastTimestamp if available, otherwise FirstTimestamp
+			eventTime = event.FirstTimestamp.Time
+			if !event.LastTimestamp.IsZero() {
+				eventTime = event.LastTimestamp.Time
+			}
 		}
 
 		if eventTime.After(cutoffTime) {
@@ -720,10 +732,22 @@ func (c *Collector) collectBulkEvents(ctx context.Context, namespace string, pod
 			continue
 		}
 
-		// Use LastTimestamp if available (for repeated events), otherwise FirstTimestamp
-		eventTime := event.FirstTimestamp.Time
-		if !event.LastTimestamp.IsZero() {
-			eventTime = event.LastTimestamp.Time
+		// Handle both old and new event formats
+		var eventTime time.Time
+
+		// For newer events, use EventTime or Series.LastObservedTime
+		if !event.EventTime.IsZero() {
+			eventTime = event.EventTime.Time
+			// If there's a series with more recent observation, use that
+			if event.Series != nil && !event.Series.LastObservedTime.IsZero() {
+				eventTime = event.Series.LastObservedTime.Time
+			}
+		} else {
+			// Fallback to older format: use LastTimestamp if available, otherwise FirstTimestamp
+			eventTime = event.FirstTimestamp.Time
+			if !event.LastTimestamp.IsZero() {
+				eventTime = event.LastTimestamp.Time
+			}
 		}
 
 		if eventTime.After(cutoffTime) {
