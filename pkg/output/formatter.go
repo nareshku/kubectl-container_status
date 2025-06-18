@@ -607,7 +607,7 @@ func (f *Formatter) printWrappedCommandLine(line string, maxWidth, indentWidth i
 
 // printLogs prints recent container logs
 func (f *Formatter) printLogs(logs []string) {
-	fmt.Printf("  • Recent Logs (last 1m):\n")
+	fmt.Printf("  • Recent Logs:\n")
 	if len(logs) == 0 {
 		fmt.Printf("    (no logs available)\n")
 		return

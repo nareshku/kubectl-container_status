@@ -819,51 +819,37 @@ func (c *Collector) collectPodInfoWithData(ctx context.Context, pod *corev1.Pod,
 
 // collectContainerLogs collects recent logs for a container
 func (c *Collector) collectContainerLogs(ctx context.Context, pod *corev1.Pod, containerName string) ([]string, error) {
-	// Try different time windows: 1m, 5m, then just last 10 lines
-	timeWindows := []int64{60, 300, 0} // 1 minute, 5 minutes, then no time limit
+	// Just get the most recent 10 lines, like systemctl status
+	logOptions := &corev1.PodLogOptions{
+		Container:  containerName,
+		Follow:     false,
+		Timestamps: false,
+		TailLines:  int64Ptr(10), // Last 10 lines, no time filtering
+	}
 
-	for _, sinceSeconds := range timeWindows {
-		logOptions := &corev1.PodLogOptions{
-			Container:  containerName,
-			Follow:     false,
-			Timestamps: false,
-			TailLines:  int64Ptr(10), // Last 10 lines
-		}
+	// Get logs
+	req := c.clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, logOptions)
+	logs, err := req.Stream(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get logs: %w", err)
+	}
+	defer logs.Close()
 
-		if sinceSeconds > 0 {
-			logOptions.SinceSeconds = int64Ptr(sinceSeconds)
-		}
-
-		// Get logs
-		req := c.clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, logOptions)
-		logs, err := req.Stream(ctx)
-		if err != nil {
-			continue // Try next time window
-		}
-
-		// Read logs
-		var logLines []string
-		scanner := bufio.NewScanner(logs)
-		for scanner.Scan() {
-			line := strings.TrimSpace(scanner.Text())
-			if line != "" {
-				logLines = append(logLines, line)
-			}
-		}
-		logs.Close()
-
-		if err := scanner.Err(); err != nil {
-			continue // Try next time window
-		}
-
-		// If we found logs, return them
-		if len(logLines) > 0 {
-			return logLines, nil
+	// Read logs
+	var logLines []string
+	scanner := bufio.NewScanner(logs)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line != "" {
+			logLines = append(logLines, line)
 		}
 	}
 
-	// If no logs found in any time window, return empty but no error
-	return []string{}, nil
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read logs: %w", err)
+	}
+
+	return logLines, nil
 }
 
 // int64Ptr returns a pointer to an int64 value

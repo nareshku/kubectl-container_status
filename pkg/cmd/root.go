@@ -86,7 +86,7 @@ Examples:
 	cmd.Flags().StringVar(&options.SortBy, "sort", "name", "Sort by: name, restarts, cpu, memory, age")
 	cmd.Flags().BoolVar(&options.ShowEnv, "env", false, "Show key environment variables")
 	cmd.Flags().BoolVar(&options.ShowEvents, "events", false, "Show recent Kubernetes events related to the pods")
-	cmd.Flags().BoolVar(&options.ShowLogs, "logs", false, "Show 10 lines from recent 1m of container logs")
+	cmd.Flags().BoolVar(&options.ShowLogs, "logs", false, "Show last 10 lines of container logs (like systemctl status)")
 
 	// Mark some flags as mutually exclusive
 	cmd.MarkFlagsMutuallyExclusive("deployment", "statefulset", "job", "daemonset", "selector")
