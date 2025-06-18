@@ -1,6 +1,7 @@
 package collector
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"strings"
@@ -166,12 +167,12 @@ func (c *Collector) collectPodInfo(ctx context.Context, pod *corev1.Pod, options
 
 	// Collect container information - pass pod metrics for resource calculation
 	for _, container := range pod.Spec.InitContainers {
-		containerInfo := c.collectContainerInfo(container, pod, types.ContainerTypeInit, options, podMetrics, needsDetailedInfo)
+		containerInfo := c.collectContainerInfo(ctx, container, pod, types.ContainerTypeInit, options, podMetrics, needsDetailedInfo)
 		podInfo.InitContainers = append(podInfo.InitContainers, containerInfo)
 	}
 
 	for _, container := range pod.Spec.Containers {
-		containerInfo := c.collectContainerInfo(container, pod, types.ContainerTypeStandard, options, podMetrics, needsDetailedInfo)
+		containerInfo := c.collectContainerInfo(ctx, container, pod, types.ContainerTypeStandard, options, podMetrics, needsDetailedInfo)
 		podInfo.Containers = append(podInfo.Containers, containerInfo)
 	}
 
@@ -191,7 +192,7 @@ func (c *Collector) collectPodInfo(ctx context.Context, pod *corev1.Pod, options
 }
 
 // collectContainerInfo collects information for a single container
-func (c *Collector) collectContainerInfo(container corev1.Container, pod *corev1.Pod, containerType types.ContainerType, options *types.Options, podMetrics *types.PodMetrics, needsDetailedInfo bool) types.ContainerInfo {
+func (c *Collector) collectContainerInfo(ctx context.Context, container corev1.Container, pod *corev1.Pod, containerType types.ContainerType, options *types.Options, podMetrics *types.PodMetrics, needsDetailedInfo bool) types.ContainerInfo {
 	containerInfo := types.ContainerInfo{
 		Name:    container.Name,
 		Type:    string(containerType),
@@ -283,6 +284,20 @@ func (c *Collector) collectContainerInfo(container corev1.Container, pod *corev1
 	// Collect environment variables
 	if needsDetailedInfo && options.ShowEnv {
 		containerInfo.Environment = c.collectEnvironmentInfo(container)
+	}
+
+	// Collect logs if requested (only for running containers to avoid errors)
+	if options.ShowLogs && containerInfo.Status == string(types.ContainerStatusRunning) {
+		logs, err := c.collectContainerLogs(ctx, pod, container.Name)
+		if err != nil {
+			// Logs are optional, continue without them but don't spam warnings
+			// Only log error for single pod view
+			if options.SinglePodView {
+				fmt.Printf("Warning: Failed to collect logs for container %s: %v\n", container.Name, err)
+			}
+		} else {
+			containerInfo.Logs = logs
+		}
 	}
 
 	return containerInfo
@@ -790,14 +805,68 @@ func (c *Collector) collectPodInfoWithData(ctx context.Context, pod *corev1.Pod,
 
 	// Collect container information - pass pod metrics for resource calculation
 	for _, container := range pod.Spec.InitContainers {
-		containerInfo := c.collectContainerInfo(container, pod, types.ContainerTypeInit, options, podMetrics, needsDetailedInfo)
+		containerInfo := c.collectContainerInfo(ctx, container, pod, types.ContainerTypeInit, options, podMetrics, needsDetailedInfo)
 		podInfo.InitContainers = append(podInfo.InitContainers, containerInfo)
 	}
 
 	for _, container := range pod.Spec.Containers {
-		containerInfo := c.collectContainerInfo(container, pod, types.ContainerTypeStandard, options, podMetrics, needsDetailedInfo)
+		containerInfo := c.collectContainerInfo(ctx, container, pod, types.ContainerTypeStandard, options, podMetrics, needsDetailedInfo)
 		podInfo.Containers = append(podInfo.Containers, containerInfo)
 	}
 
 	return podInfo, nil
+}
+
+// collectContainerLogs collects recent logs for a container
+func (c *Collector) collectContainerLogs(ctx context.Context, pod *corev1.Pod, containerName string) ([]string, error) {
+	// Try different time windows: 1m, 5m, then just last 10 lines
+	timeWindows := []int64{60, 300, 0} // 1 minute, 5 minutes, then no time limit
+
+	for _, sinceSeconds := range timeWindows {
+		logOptions := &corev1.PodLogOptions{
+			Container:  containerName,
+			Follow:     false,
+			Timestamps: false,
+			TailLines:  int64Ptr(10), // Last 10 lines
+		}
+
+		if sinceSeconds > 0 {
+			logOptions.SinceSeconds = int64Ptr(sinceSeconds)
+		}
+
+		// Get logs
+		req := c.clientset.CoreV1().Pods(pod.Namespace).GetLogs(pod.Name, logOptions)
+		logs, err := req.Stream(ctx)
+		if err != nil {
+			continue // Try next time window
+		}
+
+		// Read logs
+		var logLines []string
+		scanner := bufio.NewScanner(logs)
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if line != "" {
+				logLines = append(logLines, line)
+			}
+		}
+		logs.Close()
+
+		if err := scanner.Err(); err != nil {
+			continue // Try next time window
+		}
+
+		// If we found logs, return them
+		if len(logLines) > 0 {
+			return logLines, nil
+		}
+	}
+
+	// If no logs found in any time window, return empty but no error
+	return []string{}, nil
+}
+
+// int64Ptr returns a pointer to an int64 value
+func int64Ptr(i int64) *int64 {
+	return &i
 }

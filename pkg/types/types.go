@@ -24,6 +24,7 @@ type ContainerInfo struct {
 	Volumes           []VolumeInfo
 	Environment       []EnvVar
 	TerminationReason string
+	Logs              []string // Container logs (recent lines)
 }
 
 // ResourceInfo represents resource usage and limits
@@ -141,6 +142,7 @@ type Options struct {
 	SortBy            string
 	ShowEnv           bool
 	ShowEvents        bool
+	ShowLogs          bool // Show recent container logs
 	ShowResourceUsage bool // Show detailed resource usage (CPU/Memory percentages)
 	SinglePodView     bool // Whether this is a single pod view (vs workload view)
 	Selector          string

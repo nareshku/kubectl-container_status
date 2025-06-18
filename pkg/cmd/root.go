@@ -78,7 +78,7 @@ Examples:
 	cmd.Flags().StringVarP(&options.Namespace, "namespace", "n", "", "Target namespace (defaults to current context)")
 	cmd.Flags().StringVar(&options.Context, "context", "", "The name of the kubeconfig context to use")
 	cmd.Flags().BoolVar(&options.AllNamespaces, "all-namespaces", false, "Show containers across all namespaces")
-	cmd.Flags().BoolVar(&options.Wide, "wide", false, "Show extended info: volumes, env vars, detailed probes")
+	cmd.Flags().BoolVar(&options.Wide, "wide", false, "Show extended info: volumes, env vars, detailed probes, events")
 	cmd.Flags().BoolVar(&options.Brief, "brief", false, "Print just the summary table (no per-container details)")
 	cmd.Flags().StringVar(&options.OutputFormat, "output", "table", "Output format: table, json, yaml")
 	cmd.Flags().BoolVar(&options.NoColor, "no-color", false, "Disable colored output")
@@ -86,6 +86,7 @@ Examples:
 	cmd.Flags().StringVar(&options.SortBy, "sort", "name", "Sort by: name, restarts, cpu, memory, age")
 	cmd.Flags().BoolVar(&options.ShowEnv, "env", false, "Show key environment variables")
 	cmd.Flags().BoolVar(&options.ShowEvents, "events", false, "Show recent Kubernetes events related to the pods")
+	cmd.Flags().BoolVar(&options.ShowLogs, "logs", false, "Show 10 lines from recent 1m of container logs")
 
 	// Mark some flags as mutually exclusive
 	cmd.MarkFlagsMutuallyExclusive("deployment", "statefulset", "job", "daemonset", "selector")
@@ -108,6 +109,12 @@ func runContainerStatus(options *types.Options) error {
 	} else if options.DaemonSet != "" {
 		options.ResourceType = "daemonset"
 		options.ResourceName = options.DaemonSet
+	}
+
+	// When --wide is specified, automatically enable extended information
+	if options.Wide {
+		options.ShowEvents = true
+		options.ShowEnv = true
 	}
 
 	// Initialize Kubernetes clients

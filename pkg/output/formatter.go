@@ -426,6 +426,11 @@ func (f *Formatter) printContainerDetails(container types.ContainerInfo) {
 		f.printEnvironment(container.Environment)
 	}
 
+	// Container logs (if requested)
+	if f.options.ShowLogs && len(container.Logs) > 0 {
+		f.printLogs(container.Logs)
+	}
+
 	// Special handling for terminated containers
 	if container.Status == string(types.ContainerStatusTerminated) || container.RestartCount > 0 {
 		if container.ExitCode != nil {
@@ -519,6 +524,23 @@ func (f *Formatter) printEnvironment(env []types.EnvVar) {
 			value = "***"
 		}
 		fmt.Printf("    - %s=%s\n", envVar.Name, value)
+	}
+}
+
+// printLogs prints recent container logs
+func (f *Formatter) printLogs(logs []string) {
+	fmt.Printf("  • Recent Logs (last 1m):\n")
+	if len(logs) == 0 {
+		fmt.Printf("    (no logs available)\n")
+		return
+	}
+
+	for _, logLine := range logs {
+		// Truncate long log lines for better readability
+		if len(logLine) > 100 {
+			logLine = logLine[:97] + "..."
+		}
+		fmt.Printf("    %s\n", logLine)
 	}
 }
 
