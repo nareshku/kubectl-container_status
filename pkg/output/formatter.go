@@ -427,6 +427,11 @@ func (f *Formatter) printContainerDetails(container types.ContainerInfo) {
 		f.printEnvironment(container.Environment)
 	}
 
+	// Command and arguments (if wide mode)
+	if f.options.Wide {
+		f.printCommand(container.Command, container.Args)
+	}
+
 	// Container logs (if requested)
 	if f.options.ShowLogs && len(container.Logs) > 0 {
 		f.printLogs(container.Logs)
@@ -525,6 +530,78 @@ func (f *Formatter) printEnvironment(env []types.EnvVar) {
 			value = "***"
 		}
 		fmt.Printf("    - %s=%s\n", envVar.Name, value)
+	}
+}
+
+// printCommand prints container command and arguments
+func (f *Formatter) printCommand(command []string, args []string) {
+	if len(command) == 0 && len(args) == 0 {
+		return
+	}
+
+	fmt.Printf("  • Command:     \n")
+
+	// Show command (entrypoint)
+	if len(command) > 0 {
+		terminalWidth := f.getTerminalWidth()
+		indentWidth := 6 // "    - " prefix
+		maxLineWidth := terminalWidth - indentWidth
+
+		commandStr := strings.Join(command, " ")
+		fmt.Printf("    - Entrypoint: ")
+		f.printWrappedCommandLine(commandStr, maxLineWidth-12, indentWidth+12) // 12 = len("Entrypoint: ")
+	}
+
+	// Show arguments (cmd)
+	if len(args) > 0 {
+		terminalWidth := f.getTerminalWidth()
+		indentWidth := 6 // "    - " prefix
+		maxLineWidth := terminalWidth - indentWidth
+
+		argsStr := strings.Join(args, " ")
+		fmt.Printf("    - Args:       ")
+		f.printWrappedCommandLine(argsStr, maxLineWidth-12, indentWidth+12) // 12 = len("Args:       ")
+	}
+}
+
+// printWrappedCommandLine prints a command line with intelligent wrapping
+func (f *Formatter) printWrappedCommandLine(line string, maxWidth, indentWidth int) {
+	if len(line) <= maxWidth {
+		// Line fits, print as-is
+		fmt.Printf("%s\n", line)
+		return
+	}
+
+	// Line is too long, wrap it intelligently
+	continuationIndent := strings.Repeat(" ", indentWidth)
+
+	// Print first line
+	firstLine := line[:maxWidth]
+	// Try to break at a space boundary if possible
+	if lastSpace := strings.LastIndex(firstLine, " "); lastSpace > maxWidth*3/4 {
+		firstLine = line[:lastSpace]
+		line = line[lastSpace+1:] // Skip the space
+	} else {
+		line = line[maxWidth:]
+	}
+	fmt.Printf("%s\n", firstLine)
+
+	// Print continuation lines
+	for len(line) > 0 {
+		if len(line) <= maxWidth {
+			fmt.Printf("%s%s\n", continuationIndent, line)
+			break
+		}
+
+		continuationLine := line[:maxWidth]
+		// Try to break at word boundary
+		if lastSpace := strings.LastIndex(continuationLine, " "); lastSpace > maxWidth*3/4 {
+			continuationLine = line[:lastSpace]
+			line = line[lastSpace+1:]
+		} else {
+			line = line[maxWidth:]
+		}
+		fmt.Printf("%s%s\n", continuationIndent, continuationLine)
 	}
 }
 

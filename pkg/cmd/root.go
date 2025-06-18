@@ -78,7 +78,7 @@ Examples:
 	cmd.Flags().StringVarP(&options.Namespace, "namespace", "n", "", "Target namespace (defaults to current context)")
 	cmd.Flags().StringVar(&options.Context, "context", "", "The name of the kubeconfig context to use")
 	cmd.Flags().BoolVar(&options.AllNamespaces, "all-namespaces", false, "Show containers across all namespaces")
-	cmd.Flags().BoolVar(&options.Wide, "wide", false, "Show extended info: volumes, env vars, detailed probes, events")
+	cmd.Flags().BoolVar(&options.Wide, "wide", false, "Show extended info: volumes, env vars, commands, detailed probes, events")
 	cmd.Flags().BoolVar(&options.Brief, "brief", false, "Print just the summary table (no per-container details)")
 	cmd.Flags().StringVar(&options.OutputFormat, "output", "table", "Output format: table, json, yaml")
 	cmd.Flags().BoolVar(&options.NoColor, "no-color", false, "Disable colored output")
