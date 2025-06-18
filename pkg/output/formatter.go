@@ -14,6 +14,7 @@ import (
 
 	"github.com/nareshku/kubectl-container-status/pkg/analyzer"
 	"github.com/nareshku/kubectl-container-status/pkg/types"
+	"golang.org/x/term"
 )
 
 // Formatter handles output formatting
@@ -535,12 +536,74 @@ func (f *Formatter) printLogs(logs []string) {
 		return
 	}
 
+	terminalWidth := f.getTerminalWidth()
+	indentWidth := 4 // "    " prefix
+	maxLineWidth := terminalWidth - indentWidth
+
 	for _, logLine := range logs {
-		// Truncate long log lines for better readability
-		if len(logLine) > 100 {
-			logLine = logLine[:97] + "..."
+		f.printWrappedLogLine(logLine, maxLineWidth, indentWidth)
+	}
+}
+
+// getTerminalWidth gets the terminal width, with fallback to 120
+func (f *Formatter) getTerminalWidth() int {
+	// Try to get terminal width from environment or system
+	// Default to 120 if unable to determine
+	const defaultWidth = 120
+	const minWidth = 80
+
+	// Try to detect actual terminal width
+	if width, _, err := term.GetSize(int(os.Stdout.Fd())); err == nil && width > 0 {
+		if width < minWidth {
+			return minWidth
 		}
-		fmt.Printf("    %s\n", logLine)
+		return width
+	}
+
+	// Fallback to default
+	return defaultWidth
+}
+
+// printWrappedLogLine prints a log line with intelligent wrapping
+func (f *Formatter) printWrappedLogLine(line string, maxWidth, indentWidth int) {
+	if len(line) <= maxWidth {
+		// Line fits, print as-is
+		fmt.Printf("    %s\n", line)
+		return
+	}
+
+	// Line is too long, wrap it intelligently
+	indent := strings.Repeat(" ", indentWidth)
+	continuationIndent := strings.Repeat(" ", indentWidth+2) // Extra 2 spaces for continuation
+
+	// Print first line
+	firstLine := line[:maxWidth]
+	// Try to break at a word boundary if possible
+	if lastSpace := strings.LastIndex(firstLine, " "); lastSpace > maxWidth*3/4 {
+		firstLine = line[:lastSpace]
+		line = line[lastSpace+1:] // Skip the space
+	} else {
+		line = line[maxWidth:]
+	}
+	fmt.Printf("%s%s\n", indent, firstLine)
+
+	// Print continuation lines
+	for len(line) > 0 {
+		maxContinuationWidth := maxWidth - 2 // Account for continuation indent
+		if len(line) <= maxContinuationWidth {
+			fmt.Printf("%s%s\n", continuationIndent, line)
+			break
+		}
+
+		continuationLine := line[:maxContinuationWidth]
+		// Try to break at word boundary
+		if lastSpace := strings.LastIndex(continuationLine, " "); lastSpace > maxContinuationWidth*3/4 {
+			continuationLine = line[:lastSpace]
+			line = line[lastSpace+1:]
+		} else {
+			line = line[maxContinuationWidth:]
+		}
+		fmt.Printf("%s%s\n", continuationIndent, continuationLine)
 	}
 }
 
