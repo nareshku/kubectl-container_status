@@ -520,9 +520,18 @@ func (f *Formatter) printVolumes(volumes []types.VolumeInfo) {
 // printEnvironment prints environment variables
 func (f *Formatter) printEnvironment(env []types.EnvVar) {
 	fmt.Printf("  • Environment: \n")
+
+	// Determine how many environment variables to show
+	var limit int
+	if f.options.Wide {
+		limit = 20 // Show more when --wide is used
+	} else {
+		limit = 5 // Default limit for normal view
+	}
+
 	for i, envVar := range env {
-		if i >= 5 { // Limit to first 5
-			fmt.Printf("    ... and %d more\n", len(env)-5)
+		if i >= limit {
+			fmt.Printf("    ... and %d more\n", len(env)-limit)
 			break
 		}
 		value := envVar.Value

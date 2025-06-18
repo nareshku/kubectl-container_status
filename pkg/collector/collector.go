@@ -283,7 +283,7 @@ func (c *Collector) collectContainerInfo(ctx context.Context, container corev1.C
 
 	// Collect environment variables
 	if needsDetailedInfo && options.ShowEnv {
-		containerInfo.Environment = c.collectEnvironmentInfo(container)
+		containerInfo.Environment = c.collectEnvironmentInfo(container, pod)
 	}
 
 	// Collect logs if requested (only for running containers to avoid errors)
@@ -445,7 +445,7 @@ func (c *Collector) collectVolumeInfo(container corev1.Container, pod *corev1.Po
 }
 
 // collectEnvironmentInfo collects environment variable information
-func (c *Collector) collectEnvironmentInfo(container corev1.Container) []types.EnvVar {
+func (c *Collector) collectEnvironmentInfo(container corev1.Container, pod *corev1.Pod) []types.EnvVar {
 	var envVars []types.EnvVar
 
 	for _, env := range container.Env {
@@ -453,6 +453,40 @@ func (c *Collector) collectEnvironmentInfo(container corev1.Container) []types.E
 			Name:   env.Name,
 			Value:  env.Value,
 			Masked: c.isSensitiveEnvVar(env.Name),
+		}
+
+		// Handle valueFrom references
+		if env.Value == "" && env.ValueFrom != nil {
+			if env.ValueFrom.FieldRef != nil {
+				// Resolve field references
+				switch env.ValueFrom.FieldRef.FieldPath {
+				case "metadata.name":
+					envVar.Value = pod.Name
+				case "metadata.namespace":
+					envVar.Value = pod.Namespace
+				case "metadata.uid":
+					envVar.Value = string(pod.UID)
+				case "spec.nodeName":
+					envVar.Value = pod.Spec.NodeName
+				case "spec.serviceAccountName":
+					envVar.Value = pod.Spec.ServiceAccountName
+				case "status.hostIP":
+					envVar.Value = pod.Status.HostIP
+				case "status.podIP":
+					envVar.Value = pod.Status.PodIP
+				default:
+					envVar.Value = fmt.Sprintf("[fieldRef:%s]", env.ValueFrom.FieldRef.FieldPath)
+				}
+			} else if env.ValueFrom.SecretKeyRef != nil {
+				envVar.Value = fmt.Sprintf("[secret:%s/%s]", env.ValueFrom.SecretKeyRef.Name, env.ValueFrom.SecretKeyRef.Key)
+				envVar.Masked = true // Secrets should be masked
+			} else if env.ValueFrom.ConfigMapKeyRef != nil {
+				envVar.Value = fmt.Sprintf("[configMap:%s/%s]", env.ValueFrom.ConfigMapKeyRef.Name, env.ValueFrom.ConfigMapKeyRef.Key)
+			} else if env.ValueFrom.ResourceFieldRef != nil {
+				envVar.Value = fmt.Sprintf("[resource:%s]", env.ValueFrom.ResourceFieldRef.Resource)
+			} else {
+				envVar.Value = "[valueFrom:unknown]"
+			}
 		}
 
 		if envVar.Masked {
