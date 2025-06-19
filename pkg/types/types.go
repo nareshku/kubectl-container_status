@@ -91,6 +91,8 @@ type PodInfo struct {
 	InitContainers []ContainerInfo
 	Events         []EventInfo
 	Metrics        *PodMetrics
+	Labels         map[string]string // Pod labels
+	Annotations    map[string]string // Pod annotations
 }
 
 // EventInfo represents kubernetes events

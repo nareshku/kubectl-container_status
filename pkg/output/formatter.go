@@ -299,6 +299,11 @@ func (f *Formatter) formatPodWithContext(pod types.PodInfo, isSinglePod bool) er
 		return err
 	}
 
+	// Print pod metadata (labels and annotations) if wide mode
+	if f.options.Wide {
+		f.printPodMetadata(pod)
+	}
+
 	// Print detailed container information if not brief
 	if !f.options.Brief {
 		for _, container := range pod.InitContainers {
@@ -1275,4 +1280,53 @@ func (f *Formatter) formatUsageWithColor(percentage float64) string {
 		return color.New(color.FgHiYellow, color.Bold).Sprintf("%.0f%%", percentage)
 	}
 	return color.New(color.FgHiGreen, color.Bold).Sprintf("%.0f%%", percentage)
+}
+
+// printPodMetadata prints pod metadata (labels and annotations) if wide mode
+func (f *Formatter) printPodMetadata(pod types.PodInfo) {
+	// Print labels
+	if len(pod.Labels) > 0 {
+		fmt.Printf("📋 Pod Labels:\n")
+		var sortedLabels []string
+		for key, value := range pod.Labels {
+			sortedLabels = append(sortedLabels, fmt.Sprintf("%s=%s", key, value))
+		}
+		sort.Strings(sortedLabels)
+
+		// Limit labels display like environment variables
+		limit := 10
+		for i, label := range sortedLabels {
+			if i >= limit {
+				fmt.Printf("    ... and %d more\n", len(sortedLabels)-limit)
+				break
+			}
+			fmt.Printf("    • %s\n", label)
+		}
+		fmt.Println()
+	}
+
+	// Print annotations
+	if len(pod.Annotations) > 0 {
+		fmt.Printf("📝 Pod Annotations:\n")
+		var sortedAnnotations []string
+		for key, value := range pod.Annotations {
+			// Truncate very long annotation values for readability
+			if len(value) > 100 {
+				value = value[:97] + "..."
+			}
+			sortedAnnotations = append(sortedAnnotations, fmt.Sprintf("%s=%s", key, value))
+		}
+		sort.Strings(sortedAnnotations)
+
+		// Limit annotations display
+		limit := 10
+		for i, annotation := range sortedAnnotations {
+			if i >= limit {
+				fmt.Printf("    ... and %d more\n", len(sortedAnnotations)-limit)
+				break
+			}
+			fmt.Printf("    • %s\n", annotation)
+		}
+		fmt.Println()
+	}
 }

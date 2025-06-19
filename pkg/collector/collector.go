@@ -136,11 +136,13 @@ func (c *Collector) collectPodInfo(ctx context.Context, pod *corev1.Pod, options
 	}
 
 	podInfo := &types.PodInfo{
-		Name:      pod.Name,
-		Namespace: pod.Namespace,
-		NodeName:  pod.Spec.NodeName,
-		Age:       time.Since(pod.CreationTimestamp.Time),
-		Status:    status,
+		Name:        pod.Name,
+		Namespace:   pod.Namespace,
+		NodeName:    pod.Spec.NodeName,
+		Age:         time.Since(pod.CreationTimestamp.Time),
+		Status:      status,
+		Labels:      pod.Labels,
+		Annotations: pod.Annotations,
 	}
 
 	// Determine if this is a workload view (multiple pods) vs single pod view
@@ -825,13 +827,15 @@ func (c *Collector) collectPodInfoWithData(ctx context.Context, pod *corev1.Pod,
 	}
 
 	podInfo := &types.PodInfo{
-		Name:      pod.Name,
-		Namespace: pod.Namespace,
-		NodeName:  pod.Spec.NodeName,
-		Age:       time.Since(pod.CreationTimestamp.Time),
-		Status:    status,
-		Metrics:   podMetrics,
-		Events:    podEvents,
+		Name:        pod.Name,
+		Namespace:   pod.Namespace,
+		NodeName:    pod.Spec.NodeName,
+		Age:         time.Since(pod.CreationTimestamp.Time),
+		Status:      status,
+		Metrics:     podMetrics,
+		Events:      podEvents,
+		Labels:      pod.Labels,
+		Annotations: pod.Annotations,
 	}
 
 	// Determine if detailed info is needed
