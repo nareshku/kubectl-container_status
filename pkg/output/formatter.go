@@ -85,6 +85,11 @@ func (f *Formatter) formatWorkload(workload types.WorkloadInfo) error {
 	// Print workload header
 	f.printWorkloadHeader(workload)
 
+	// Show logs warning for single pods
+	if workload.Kind == "Pod" && f.options.ShowLogs {
+		f.printLogsWarning()
+	}
+
 	if f.options.Brief {
 		// Brief mode: just show summary table
 		return f.printBriefSummary(workload)
@@ -144,7 +149,9 @@ func (f *Formatter) printWorkloadHeader(workload types.WorkloadInfo) {
 	// For single pods, include NODE and AGE in the header to avoid redundancy
 	if workload.Kind == "Pod" && len(workload.Pods) == 1 {
 		pod := workload.Pods[0]
-		fmt.Printf("🎯 %s: %s   %s   📍 NODE: %s   ⏰ AGE: %s   🏷️  NAMESPACE: %s\n",
+
+		// Build the header with optional service account
+		baseInfo := fmt.Sprintf("🎯 %s: %s   %s   📍 NODE: %s   ⏰ AGE: %s   🏷️  NAMESPACE: %s",
 			headerColor.Sprintf("%s", strings.ToUpper(workload.Kind)),
 			headerColor.Sprintf("%s", workload.Name),
 			replicasInfo,
@@ -152,6 +159,13 @@ func (f *Formatter) printWorkloadHeader(workload types.WorkloadInfo) {
 			f.formatDuration(pod.Age),
 			workload.Namespace,
 		)
+
+		// Add service account if present and not default
+		if pod.ServiceAccount != "" && pod.ServiceAccount != "default" {
+			fmt.Printf("%s   🔐 SERVICE ACCOUNT: %s\n", baseInfo, pod.ServiceAccount)
+		} else {
+			fmt.Printf("%s\n", baseInfo)
+		}
 	} else {
 		fmt.Printf("🎯 %s: %s   %s   🏷️  NAMESPACE: %s\n",
 			headerColor.Sprintf("%s", strings.ToUpper(workload.Kind)),
@@ -259,6 +273,9 @@ func (f *Formatter) printBriefSummary(workload types.WorkloadInfo) error {
 	table.SetAutoFormatHeaders(false)
 	table.SetBorder(true)
 
+	// Configure table formatting for better width handling
+	f.configureBriefTableWidths(table)
+
 	for _, pod := range workload.Pods {
 		ready := f.getReadyCount(pod)
 		totalContainers := len(pod.Containers)
@@ -328,17 +345,31 @@ func (f *Formatter) printPodHeader(pod types.PodInfo) {
 	healthIcon := f.analyzer.GetHealthIcon(pod.Health.Level)
 	healthColor := f.getHealthColor(pod.Health.Level)
 
-	fmt.Printf("POD: %s   NODE: %s   AGE: %s\n",
+	// Build pod header with status, optional service account
+	statusColor := f.getPodStatusColor(pod.Status)
+	baseInfo := fmt.Sprintf("POD: %s   STATUS: %s   NODE: %s   AGE: %s",
 		color.New(color.Bold).Sprintf("%s", pod.Name),
+		statusColor.Sprintf("%s", pod.Status),
 		pod.NodeName,
 		f.formatDuration(pod.Age),
 	)
 
-	fmt.Printf("%s HEALTH: %s (%s)\n\n",
+	// Add service account if present and not default
+	if pod.ServiceAccount != "" && pod.ServiceAccount != "default" {
+		fmt.Printf("%s   SERVICE ACCOUNT: %s\n", baseInfo, pod.ServiceAccount)
+	} else {
+		fmt.Printf("%s\n", baseInfo)
+	}
+
+	fmt.Printf("%s HEALTH: %s (%s)\n",
 		healthIcon,
 		healthColor.Sprintf("%s", pod.Health.Level),
 		pod.Health.Reason,
 	)
+
+	// Show conditions for pending pods or if there are failed conditions
+	f.printPodConditions(pod)
+	fmt.Println()
 }
 
 // printContainerTable prints the container status table
@@ -347,6 +378,9 @@ func (f *Formatter) printContainerTable(pod types.PodInfo) error {
 	table.SetHeader([]string{"CONTAINER", "STATUS", "RESTARTS", "LAST STATE", "EXIT CODE"})
 	table.SetAutoFormatHeaders(false)
 	table.SetBorder(true)
+
+	// Configure table formatting for better width handling
+	f.configureContainerTableWidths(table)
 
 	// Add init containers
 	for _, container := range pod.InitContainers {
@@ -384,11 +418,17 @@ func (f *Formatter) addContainerRow(table *tablewriter.Table, container types.Co
 		}
 	}
 
+	// Format last state with reason if available
+	lastState := container.LastState
+	if container.LastStateReason != "" && container.LastState != "None" {
+		lastState = fmt.Sprintf("%s (%s)", container.LastState, container.LastStateReason)
+	}
+
 	table.Append([]string{
 		name,
 		status,
 		f.formatRestartInfo(container.RestartCount, container.LastRestartTime),
-		container.LastState,
+		lastState,
 		exitCode,
 	})
 }
@@ -451,6 +491,10 @@ func (f *Formatter) printContainerDetails(container types.ContainerInfo) {
 			restartInfo := fmt.Sprintf("  • Restart Count: %d", container.RestartCount)
 			if container.LastRestartTime != nil {
 				restartInfo += fmt.Sprintf(" (last restart: %s ago)", f.formatDuration(time.Since(*container.LastRestartTime)))
+			}
+			// Add last restart reason if available
+			if container.LastStateReason != "" && container.LastState != "None" {
+				restartInfo += fmt.Sprintf(" - reason: %s", container.LastStateReason)
 			}
 			fmt.Printf("%s\n", restartInfo)
 		}
@@ -713,12 +757,36 @@ func (f *Formatter) printEvents(events []types.EventInfo) {
 	if len(events) == 0 {
 		fmt.Printf("  • ✨ No events found in %s\n", timeWindow)
 	} else {
-		for _, event := range events {
+		// Sort events with FailedScheduling first, then by time
+		sortedEvents := make([]types.EventInfo, len(events))
+		copy(sortedEvents, events)
+
+		sort.Slice(sortedEvents, func(i, j int) bool {
+			// Prioritize FailedScheduling events
+			iIsScheduling := sortedEvents[i].Reason == "FailedScheduling"
+			jIsScheduling := sortedEvents[j].Reason == "FailedScheduling"
+
+			if iIsScheduling && !jIsScheduling {
+				return true
+			}
+			if !iIsScheduling && jIsScheduling {
+				return false
+			}
+
+			// If both or neither are FailedScheduling, sort by time (newest first)
+			return sortedEvents[i].Time.After(sortedEvents[j].Time)
+		})
+
+		for _, event := range sortedEvents {
 			age := time.Since(event.Time)
 			eventIcon := ""
 			eventColor := color.New()
 
-			if event.Type == "Warning" {
+			// Special handling for FailedScheduling events
+			if event.Reason == "FailedScheduling" {
+				eventIcon = "🚫" // Blocked icon for scheduling failures
+				eventColor = color.New(color.FgRed, color.Bold)
+			} else if event.Type == "Warning" {
 				eventIcon = "⚠️" // Warning triangle for warnings
 				eventColor = color.New(color.FgYellow, color.Bold)
 			} else if event.Type == "Error" {
@@ -732,11 +800,18 @@ func (f *Formatter) printEvents(events []types.EventInfo) {
 				eventColor = color.New(color.FgWhite)
 			}
 
+			// Format the message for FailedScheduling to be more readable
+			message := event.Message
+			if event.Reason == "FailedScheduling" && len(message) > 100 {
+				// Wrap long scheduling messages intelligently
+				message = f.wrapSchedulingMessage(message)
+			}
+
 			fmt.Printf("  • %s %s %s: %s (%s)\n",
 				eventIcon,
 				eventColor.Sprint(event.Type),
 				f.formatDuration(age),
-				event.Message,
+				message,
 				event.Reason)
 		}
 	}
@@ -1044,9 +1119,13 @@ func (f *Formatter) printWorkloadSummary(workload types.WorkloadInfo) {
 // printWorkloadTable prints a table view of pods in the workload
 func (f *Formatter) printWorkloadTable(workload types.WorkloadInfo) {
 	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"POD", "NODE", "STATUS", "READY", "RESTARTS", "CPU", "MEMORY", "AGE"})
+	headers := []string{"POD", "NODE", "STATUS", "READY", "RESTARTS", "CPU", "MEMORY", "AGE"}
+	table.SetHeader(headers)
 	table.SetAutoFormatHeaders(false)
 	table.SetBorder(true)
+
+	// Configure column widths based on content and terminal size
+	f.configureWorkloadTableWidths(table, workload)
 
 	for _, pod := range workload.Pods {
 		ready := f.getReadyCount(pod)
@@ -1067,11 +1146,8 @@ func (f *Formatter) printWorkloadTable(workload types.WorkloadInfo) {
 
 		lastRestartTime := f.getLastRestartTime(pod)
 
-		// Truncate node name for better table formatting
+		// Use full node name - column width will be calculated dynamically
 		node := pod.NodeName
-		if len(node) > 20 {
-			node = node[:17] + "..."
-		}
 
 		// Format CPU and Memory percentages
 		cpuStr := fmt.Sprintf("%.0f%%", totalCPU)
@@ -1282,6 +1358,125 @@ func (f *Formatter) formatUsageWithColor(percentage float64) string {
 	return color.New(color.FgHiGreen, color.Bold).Sprintf("%.0f%%", percentage)
 }
 
+// configureWorkloadTableWidths configures optimal column widths for the workload table
+func (f *Formatter) configureWorkloadTableWidths(table *tablewriter.Table, workload types.WorkloadInfo) {
+	if len(workload.Pods) == 0 {
+		return
+	}
+
+	// Get terminal width
+	terminalWidth := f.getTerminalWidth()
+
+	// Set table formatting options for better width handling
+	table.SetAutoWrapText(false)
+	table.SetAutoFormatHeaders(true)
+	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
+	table.SetAlignment(tablewriter.ALIGN_LEFT)
+
+	// Calculate if we need to adjust node names based on available space
+	// If terminal is wide enough, don't truncate node names
+	// Only truncate if terminal is very narrow
+	if terminalWidth < 100 {
+		// For narrow terminals, we'll let the natural wrapping handle it
+		table.SetColMinWidth(0, 15) // POD column minimum
+		table.SetColMinWidth(1, 15) // NODE column minimum
+	} else {
+		// For wider terminals, allow more space
+		table.SetColMinWidth(0, 25) // POD column minimum
+		table.SetColMinWidth(1, 25) // NODE column minimum
+	}
+
+	// Set column alignments
+	table.SetColumnAlignment([]int{
+		tablewriter.ALIGN_LEFT,   // POD
+		tablewriter.ALIGN_LEFT,   // NODE
+		tablewriter.ALIGN_LEFT,   // STATUS
+		tablewriter.ALIGN_CENTER, // READY
+		tablewriter.ALIGN_LEFT,   // RESTARTS
+		tablewriter.ALIGN_RIGHT,  // CPU
+		tablewriter.ALIGN_RIGHT,  // MEMORY
+		tablewriter.ALIGN_RIGHT,  // AGE
+	})
+}
+
+// configureBriefTableWidths configures optimal column widths for the brief summary table
+func (f *Formatter) configureBriefTableWidths(table *tablewriter.Table) {
+	terminalWidth := f.getTerminalWidth()
+
+	// Set table formatting options
+	table.SetAutoWrapText(false)
+	table.SetAutoFormatHeaders(true)
+	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
+	table.SetAlignment(tablewriter.ALIGN_LEFT)
+
+	// Set minimum column widths based on terminal size
+	if terminalWidth < 100 {
+		table.SetColMinWidth(0, 20) // POD column
+	} else {
+		table.SetColMinWidth(0, 30) // POD column
+	}
+
+	// Set column alignments
+	table.SetColumnAlignment([]int{
+		tablewriter.ALIGN_LEFT,   // POD
+		tablewriter.ALIGN_LEFT,   // STATUS
+		tablewriter.ALIGN_CENTER, // READY
+		tablewriter.ALIGN_LEFT,   // RESTARTS
+		tablewriter.ALIGN_RIGHT,  // AGE
+	})
+}
+
+// configureContainerTableWidths configures optimal column widths for the container table
+func (f *Formatter) configureContainerTableWidths(table *tablewriter.Table) {
+	terminalWidth := f.getTerminalWidth()
+
+	// Set table formatting options
+	table.SetAutoWrapText(false)
+	table.SetAutoFormatHeaders(true)
+	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
+	table.SetAlignment(tablewriter.ALIGN_LEFT)
+
+	// Set minimum column widths based on terminal size
+	if terminalWidth < 100 {
+		table.SetColMinWidth(0, 15) // CONTAINER column
+		table.SetColMinWidth(3, 15) // LAST STATE column
+	} else {
+		table.SetColMinWidth(0, 20) // CONTAINER column
+		table.SetColMinWidth(3, 20) // LAST STATE column
+	}
+
+	// Set column alignments
+	table.SetColumnAlignment([]int{
+		tablewriter.ALIGN_LEFT,   // CONTAINER
+		tablewriter.ALIGN_LEFT,   // STATUS
+		tablewriter.ALIGN_LEFT,   // RESTARTS
+		tablewriter.ALIGN_LEFT,   // LAST STATE
+		tablewriter.ALIGN_CENTER, // EXIT CODE
+	})
+}
+
+// printLogsWarning prints a warning message when logs are being displayed
+func (f *Formatter) printLogsWarning() {
+	warningColor := color.New(color.FgYellow, color.Bold)
+	separatorColor := color.New(color.FgHiBlack)
+
+	// Create a visual warning box
+	warningBox := "┌─ WARNING ────────────────────────────────────────────┐"
+	warningBottom := "└─────────────────────────────────────────────────────┘"
+
+	fmt.Println(separatorColor.Sprint(warningBox))
+	fmt.Printf("│ %s %s │\n",
+		warningColor.Sprint("⚠️  SHOWING CONTAINER LOGS"),
+		strings.Repeat(" ", max(0, 24)), // Padding to align with box
+	)
+	fmt.Printf("│ %s %s │\n",
+		"Recent container logs are included below.",
+		strings.Repeat(" ", max(0, 12)), // Padding to align with box
+	)
+	fmt.Println(separatorColor.Sprint(warningBottom))
+	fmt.Println()
+}
+
 // printPodMetadata prints pod metadata (labels and annotations) if wide mode
 func (f *Formatter) printPodMetadata(pod types.PodInfo) {
 	// Print labels
@@ -1328,5 +1523,93 @@ func (f *Formatter) printPodMetadata(pod types.PodInfo) {
 			fmt.Printf("    • %s\n", annotation)
 		}
 		fmt.Println()
+	}
+}
+
+// printPodConditions prints pod conditions, especially for pending or problematic pods
+func (f *Formatter) printPodConditions(pod types.PodInfo) {
+	if len(pod.Conditions) == 0 {
+		return
+	}
+
+	// Always show conditions for pending pods or if any condition is False
+	isPending := pod.Status == "Pending"
+	hasFailedConditions := false
+
+	for _, condition := range pod.Conditions {
+		if condition.Status == "False" {
+			hasFailedConditions = true
+			break
+		}
+	}
+
+	if !isPending && !hasFailedConditions {
+		return
+	}
+
+	fmt.Printf("🏷️  Conditions:\n")
+	fmt.Printf("  %-17s %-7s\n", "Type", "Status")
+	for _, condition := range pod.Conditions {
+		// Highlight failed conditions in red
+		statusDisplay := condition.Status
+		if condition.Status == "False" {
+			statusDisplay = color.New(color.FgRed).Sprint(condition.Status)
+		} else if condition.Status == "True" {
+			statusDisplay = color.New(color.FgGreen).Sprint(condition.Status)
+		}
+
+		fmt.Printf("  %-17s %s", condition.Type, statusDisplay)
+
+		// Show reason for False conditions
+		if condition.Status == "False" && condition.Reason != "" {
+			fmt.Printf(" (%s)", condition.Reason)
+		}
+		fmt.Println()
+	}
+	fmt.Println()
+}
+
+// wrapSchedulingMessage formats long FailedScheduling messages for better readability
+func (f *Formatter) wrapSchedulingMessage(message string) string {
+	// Try to break on common separators in scheduling messages
+	separators := []string{", ", ". preemption:", ": ", " preemption:"}
+
+	for _, sep := range separators {
+		if strings.Contains(message, sep) {
+			parts := strings.Split(message, sep)
+			if len(parts) > 1 {
+				// If we found a good break point, format nicely
+				result := parts[0]
+				for i := 1; i < len(parts); i++ {
+					result += sep + "\n      " + strings.TrimSpace(parts[i])
+				}
+				return result
+			}
+		}
+	}
+
+	// If no good separator found, just return original
+	return message
+}
+
+// getPodStatusColor returns appropriate color for pod status
+func (f *Formatter) getPodStatusColor(status string) *color.Color {
+	if f.options.NoColor {
+		return color.New()
+	}
+
+	switch status {
+	case "Running":
+		return color.New(color.FgGreen, color.Bold)
+	case "Pending":
+		return color.New(color.FgYellow, color.Bold)
+	case "Succeeded":
+		return color.New(color.FgCyan, color.Bold)
+	case "Failed":
+		return color.New(color.FgRed, color.Bold)
+	case "Terminating":
+		return color.New(color.FgMagenta, color.Bold)
+	default:
+		return color.New(color.FgWhite)
 	}
 }

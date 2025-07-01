@@ -136,13 +136,15 @@ func (c *Collector) collectPodInfo(ctx context.Context, pod *corev1.Pod, options
 	}
 
 	podInfo := &types.PodInfo{
-		Name:        pod.Name,
-		Namespace:   pod.Namespace,
-		NodeName:    pod.Spec.NodeName,
-		Age:         time.Since(pod.CreationTimestamp.Time),
-		Status:      status,
-		Labels:      pod.Labels,
-		Annotations: pod.Annotations,
+		Name:           pod.Name,
+		Namespace:      pod.Namespace,
+		NodeName:       pod.Spec.NodeName,
+		ServiceAccount: pod.Spec.ServiceAccountName,
+		Age:            time.Since(pod.CreationTimestamp.Time),
+		Status:         status,
+		Labels:         pod.Labels,
+		Annotations:    pod.Annotations,
+		Conditions:     c.collectPodConditions(pod),
 	}
 
 	// Determine if this is a workload view (multiple pods) vs single pod view
@@ -259,14 +261,17 @@ func (c *Collector) collectContainerInfo(ctx context.Context, container corev1.C
 		// Last state information and exit code from previous termination
 		if containerStatus.LastTerminationState.Terminated != nil {
 			containerInfo.LastState = "Terminated"
+			containerInfo.LastStateReason = containerStatus.LastTerminationState.Terminated.Reason
 			// Get exit code from last termination if current state doesn't have one
 			if containerInfo.ExitCode == nil {
 				containerInfo.ExitCode = &containerStatus.LastTerminationState.Terminated.ExitCode
 			}
 		} else if containerStatus.LastTerminationState.Waiting != nil {
 			containerInfo.LastState = "Waiting"
+			containerInfo.LastStateReason = containerStatus.LastTerminationState.Waiting.Reason
 		} else {
 			containerInfo.LastState = "None"
+			containerInfo.LastStateReason = ""
 		}
 	} else {
 		containerInfo.Status = string(types.ContainerStatusUnknown)
@@ -827,15 +832,17 @@ func (c *Collector) collectPodInfoWithData(ctx context.Context, pod *corev1.Pod,
 	}
 
 	podInfo := &types.PodInfo{
-		Name:        pod.Name,
-		Namespace:   pod.Namespace,
-		NodeName:    pod.Spec.NodeName,
-		Age:         time.Since(pod.CreationTimestamp.Time),
-		Status:      status,
-		Metrics:     podMetrics,
-		Events:      podEvents,
-		Labels:      pod.Labels,
-		Annotations: pod.Annotations,
+		Name:           pod.Name,
+		Namespace:      pod.Namespace,
+		NodeName:       pod.Spec.NodeName,
+		ServiceAccount: pod.Spec.ServiceAccountName,
+		Age:            time.Since(pod.CreationTimestamp.Time),
+		Status:         status,
+		Metrics:        podMetrics,
+		Events:         podEvents,
+		Labels:         pod.Labels,
+		Annotations:    pod.Annotations,
+		Conditions:     c.collectPodConditions(pod),
 	}
 
 	// Determine if detailed info is needed
@@ -888,6 +895,23 @@ func (c *Collector) collectContainerLogs(ctx context.Context, pod *corev1.Pod, c
 	}
 
 	return logLines, nil
+}
+
+// collectPodConditions collects pod condition information
+func (c *Collector) collectPodConditions(pod *corev1.Pod) []types.PodCondition {
+	var conditions []types.PodCondition
+
+	for _, condition := range pod.Status.Conditions {
+		podCondition := types.PodCondition{
+			Type:    string(condition.Type),
+			Status:  string(condition.Status),
+			Reason:  condition.Reason,
+			Message: condition.Message,
+		}
+		conditions = append(conditions, podCondition)
+	}
+
+	return conditions
 }
 
 // int64Ptr returns a pointer to an int64 value

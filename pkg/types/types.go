@@ -12,6 +12,7 @@ type ContainerInfo struct {
 	Ready             bool
 	RestartCount      int32
 	LastState         string
+	LastStateReason   string
 	ExitCode          *int32
 	StartedAt         *time.Time
 	FinishedAt        *time.Time
@@ -84,6 +85,7 @@ type PodInfo struct {
 	Name           string
 	Namespace      string
 	NodeName       string
+	ServiceAccount string            // Service account used by the pod
 	Age            time.Duration
 	Status         string
 	Health         HealthStatus
@@ -93,6 +95,7 @@ type PodInfo struct {
 	Metrics        *PodMetrics
 	Labels         map[string]string // Pod labels
 	Annotations    map[string]string // Pod annotations
+	Conditions     []PodCondition    // Pod conditions (PodScheduled, etc.)
 }
 
 // EventInfo represents kubernetes events
@@ -184,6 +187,14 @@ const (
 	ContainerTypeStandard  ContainerType = "standard"
 	ContainerTypeEphemeral ContainerType = "ephemeral"
 )
+
+// PodCondition represents pod condition information
+type PodCondition struct {
+	Type    string // PodScheduled, Initialized, Ready, ContainersReady
+	Status  string // True, False, Unknown
+	Reason  string
+	Message string
+}
 
 // SortType represents sort options
 type SortType string

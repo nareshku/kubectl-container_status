@@ -8,7 +8,7 @@ A kubectl plugin that provides a **clean, human-friendly view** of container-lev
 - 🏥 **Health Scoring**: Intelligent health analysis with visual indicators
 - 📊 **Resource Usage**: Progress bars for CPU and memory usage
 - 🔄 **Probe Status**: Display liveness, readiness, and startup probe status
-- 📁 **Volume Information**: Show mounted volumes and their types (with `--wide`)
+- 📁 **Volume Information**: Show mounted volumes and their types
 - 🌈 **Enhanced Visual Design**: Modern terminal output with emoji indicators, box-drawing characters, and intuitive color coding
 - 📝 **Multiple Formats**: Table, JSON, and YAML output formats
 - 🔍 **Problematic Container Detection**: Filter to show only containers and pods with issues (restarts, failures, terminating, etc.)
@@ -73,9 +73,6 @@ kubectl container-status --problematic
 # Brief mode (summary table only)
 kubectl container-status --deployment coredns --brief
 
-# Wide mode with volume information
-kubectl container-status --deployment coredns --wide
-
 # JSON output
 kubectl container-status deployment/coredns --output json
 ```
@@ -92,7 +89,6 @@ kubectl container-status deployment/coredns --output json
 | `-n`, `--namespace` | Target namespace (defaults to current context)                      |
 | `--context`         | The name of the kubeconfig context to use                           |
 | `--all-namespaces`  | Show containers across all namespaces                               |
-| `--wide`            | Show extended info: volumes, env vars, detailed probes              |
 | `--brief`           | Print just the summary table (no per-container details)             |
 | `--output`          | Output format: table, json, yaml                                   |
 | `--no-color`        | Disable colored output                                              |
@@ -100,6 +96,8 @@ kubectl container-status deployment/coredns --output json
 | `--sort`            | Sort by: name, restarts, cpu, memory, age                          |
 | `--env`             | Show key environment variables                                      |
 | `--events`          | Show recent Kubernetes events with enhanced visual indicators       |
+
+> **Note**: The tool now shows detailed information (volumes, environment variables, commands, labels, annotations, events) by default. Use `--brief` for a summary table view if you prefer a more compact display.
 
 ## Output Examples
 
