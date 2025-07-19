@@ -65,7 +65,13 @@ Examples:
 				}
 			}
 
-			return runContainerStatus(options)
+			err := runContainerStatus(options)
+			if err != nil {
+				// Print error message and exit without showing usage
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+			return nil
 		},
 	}
 
@@ -86,6 +92,7 @@ Examples:
 	cmd.Flags().BoolVar(&options.ShowEnv, "env", false, "Show key environment variables")
 	cmd.Flags().BoolVar(&options.ShowEvents, "events", false, "Show recent Kubernetes events related to the pods")
 	cmd.Flags().BoolVar(&options.ShowLogs, "logs", false, "Show last 10 lines of container logs (Pod resources only)")
+	cmd.Flags().StringVarP(&options.ContainerName, "container", "c", "", "Show only the specified container")
 
 	// Mark some flags as mutually exclusive
 	cmd.MarkFlagsMutuallyExclusive("deployment", "statefulset", "job", "daemonset", "selector")
@@ -180,7 +187,7 @@ func runContainerStatus(options *types.Options) error {
 
 		// Restrict --logs to only work with Pod resources
 		if options.ShowLogs && !isSinglePod {
-			fmt.Fprintf(os.Stderr, "Warning: --logs flag is only supported for individual Pods, ignoring for %s '%s'\n", 
+			fmt.Fprintf(os.Stderr, "Warning: --logs flag is only supported for individual Pods, ignoring for %s '%s'\n",
 				workload.Kind, workload.Name)
 			options.ShowLogs = false
 		}

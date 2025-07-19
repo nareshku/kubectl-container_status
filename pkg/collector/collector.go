@@ -145,6 +145,7 @@ func (c *Collector) collectPodInfo(ctx context.Context, pod *corev1.Pod, options
 		Labels:         pod.Labels,
 		Annotations:    pod.Annotations,
 		Conditions:     c.collectPodConditions(pod),
+		Network:        c.collectNetworkInfo(pod),
 	}
 
 	// Determine if this is a workload view (multiple pods) vs single pod view
@@ -843,6 +844,7 @@ func (c *Collector) collectPodInfoWithData(ctx context.Context, pod *corev1.Pod,
 		Labels:         pod.Labels,
 		Annotations:    pod.Annotations,
 		Conditions:     c.collectPodConditions(pod),
+		Network:        c.collectNetworkInfo(pod),
 	}
 
 	// Determine if detailed info is needed
@@ -917,4 +919,25 @@ func (c *Collector) collectPodConditions(pod *corev1.Pod) []types.PodCondition {
 // int64Ptr returns a pointer to an int64 value
 func int64Ptr(i int64) *int64 {
 	return &i
+}
+
+// collectNetworkInfo collects network information for a pod
+func (c *Collector) collectNetworkInfo(pod *corev1.Pod) types.NetworkInfo {
+	networkInfo := types.NetworkInfo{
+		HostNetwork: pod.Spec.HostNetwork,
+		PodIP:       pod.Status.PodIP,
+		HostIP:      pod.Status.HostIP,
+	}
+
+	// Collect all pod IPs for dual-stack support
+	if len(pod.Status.PodIPs) > 0 {
+		for _, podIP := range pod.Status.PodIPs {
+			networkInfo.PodIPs = append(networkInfo.PodIPs, podIP.IP)
+		}
+	} else if pod.Status.PodIP != "" {
+		// Fallback to single PodIP if PodIPs is not available
+		networkInfo.PodIPs = append(networkInfo.PodIPs, pod.Status.PodIP)
+	}
+
+	return networkInfo
 }

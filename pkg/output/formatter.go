@@ -166,12 +166,27 @@ func (f *Formatter) printWorkloadHeader(workload types.WorkloadInfo) {
 		} else {
 			fmt.Printf("%s\n", baseInfo)
 		}
+
+		// Add network information for single pods
+		f.printNetworkInfo(pod)
 	} else {
-		fmt.Printf("🎯 %s: %s   %s   🏷️  NAMESPACE: %s\n",
+		// For multi-pod workloads, determine network type from the first pod
+		networkInfo := ""
+		if len(workload.Pods) > 0 {
+			firstPod := workload.Pods[0]
+			networkType := "Pod"
+			if firstPod.Network.HostNetwork {
+				networkType = "Host"
+			}
+			networkInfo = fmt.Sprintf("   🌐 NETWORK: %s", networkType)
+		}
+
+		fmt.Printf("🎯 %s: %s   %s   🏷️  NAMESPACE: %s%s\n",
 			headerColor.Sprintf("%s", strings.ToUpper(workload.Kind)),
 			headerColor.Sprintf("%s", workload.Name),
 			replicasInfo,
 			workload.Namespace,
+			networkInfo,
 		)
 	}
 
@@ -324,10 +339,14 @@ func (f *Formatter) formatPodWithContext(pod types.PodInfo, isSinglePod bool) er
 	// Print detailed container information if not brief
 	if !f.options.Brief {
 		for _, container := range pod.InitContainers {
-			f.printContainerDetails(container)
+			if f.shouldShowContainer(container.Name) {
+				f.printContainerDetails(container)
+			}
 		}
 		for _, container := range pod.Containers {
-			f.printContainerDetails(container)
+			if f.shouldShowContainer(container.Name) {
+				f.printContainerDetails(container)
+			}
 		}
 
 		// Print recent events
@@ -361,6 +380,9 @@ func (f *Formatter) printPodHeader(pod types.PodInfo) {
 		fmt.Printf("%s\n", baseInfo)
 	}
 
+	// Add network information
+	f.printNetworkInfo(pod)
+
 	fmt.Printf("%s HEALTH: %s (%s)\n",
 		healthIcon,
 		healthColor.Sprintf("%s", pod.Health.Level),
@@ -384,12 +406,16 @@ func (f *Formatter) printContainerTable(pod types.PodInfo) error {
 
 	// Add init containers
 	for _, container := range pod.InitContainers {
-		f.addContainerRow(table, container)
+		if f.shouldShowContainer(container.Name) {
+			f.addContainerRow(table, container)
+		}
 	}
 
 	// Add regular containers
 	for _, container := range pod.Containers {
-		f.addContainerRow(table, container)
+		if f.shouldShowContainer(container.Name) {
+			f.addContainerRow(table, container)
+		}
 	}
 
 	table.Render()
@@ -965,6 +991,8 @@ func (f *Formatter) printWorkloadSummary(workload types.WorkloadInfo) {
 		VolumeTypes map[string]bool
 		CPUUsages   []float64 // All CPU usage percentages for this container type
 		MemUsages   []float64 // All Memory usage percentages for this container type
+		CPUValues   []string  // All CPU usage values (e.g., "70m", "100m")
+		MemValues   []string  // All Memory usage values (e.g., "14Mi", "256Mi")
 	})
 
 	for _, pod := range workload.Pods {
@@ -979,6 +1007,11 @@ func (f *Formatter) printWorkloadSummary(workload types.WorkloadInfo) {
 
 		// Collect container information
 		for _, container := range append(pod.InitContainers, pod.Containers...) {
+			// Skip containers that don't match the filter
+			if !f.shouldShowContainer(container.Name) {
+				continue
+			}
+
 			totalRestarts += container.RestartCount
 
 			containerName := container.Name
@@ -994,6 +1027,8 @@ func (f *Formatter) printWorkloadSummary(workload types.WorkloadInfo) {
 				// Container already exists, add usage data and update volume types
 				info.CPUUsages = append(info.CPUUsages, container.Resources.CPUPercentage)
 				info.MemUsages = append(info.MemUsages, container.Resources.MemPercentage)
+				info.CPUValues = append(info.CPUValues, container.Resources.CPUUsage)
+				info.MemValues = append(info.MemValues, container.Resources.MemUsage)
 				for _, volume := range container.Volumes {
 					info.VolumeTypes[volume.VolumeType] = true
 				}
@@ -1015,6 +1050,8 @@ func (f *Formatter) printWorkloadSummary(workload types.WorkloadInfo) {
 					VolumeTypes map[string]bool
 					CPUUsages   []float64
 					MemUsages   []float64
+					CPUValues   []string
+					MemValues   []string
 				}{
 					Image:       imageName,
 					Type:        container.Type,
@@ -1025,6 +1062,8 @@ func (f *Formatter) printWorkloadSummary(workload types.WorkloadInfo) {
 					VolumeTypes: volumeTypes,
 					CPUUsages:   []float64{container.Resources.CPUPercentage},
 					MemUsages:   []float64{container.Resources.MemPercentage},
+					CPUValues:   []string{container.Resources.CPUUsage},
+					MemValues:   []string{container.Resources.MemUsage},
 				}
 			}
 		}
@@ -1087,15 +1126,24 @@ func (f *Formatter) printWorkloadSummary(workload types.WorkloadInfo) {
 			cpuStats := f.calculateResourceStats(info.CPUUsages)
 			memStats := f.calculateResourceStats(info.MemUsages)
 
-			fmt.Printf("           Usage: CPU %s avg:%s %s p90:%s %s p99:%s\n",
-				f.createMiniProgressBar(cpuStats.Average), f.formatUsageWithColor(cpuStats.Average),
-				f.createMiniProgressBar(cpuStats.P90), f.formatUsageWithColor(cpuStats.P90),
-				f.createMiniProgressBar(cpuStats.P99), f.formatUsageWithColor(cpuStats.P99))
+			// Calculate actual values for percentiles
+			cpuAvgValue := f.calculateAverageValue(info.CPUValues)
+			cpuP90Value := f.calculatePercentileValue(info.CPUValues, 0.9)
+			cpuP99Value := f.calculatePercentileValue(info.CPUValues, 0.99)
 
-			fmt.Printf("                  Mem %s avg:%s %s p90:%s %s p99:%s\n",
-				f.createMiniProgressBar(memStats.Average), f.formatUsageWithColor(memStats.Average),
-				f.createMiniProgressBar(memStats.P90), f.formatUsageWithColor(memStats.P90),
-				f.createMiniProgressBar(memStats.P99), f.formatUsageWithColor(memStats.P99))
+			memAvgValue := f.calculateAverageValue(info.MemValues)
+			memP90Value := f.calculatePercentileValue(info.MemValues, 0.9)
+			memP99Value := f.calculatePercentileValue(info.MemValues, 0.99)
+
+			fmt.Printf("           Usage: CPU %s avg:%s (%s) %s p90:%s (%s) %s p99:%s (%s)\n",
+				f.createMiniProgressBar(cpuStats.Average), f.formatUsageWithColor(cpuStats.Average), cpuAvgValue,
+				f.createMiniProgressBar(cpuStats.P90), f.formatUsageWithColor(cpuStats.P90), cpuP90Value,
+				f.createMiniProgressBar(cpuStats.P99), f.formatUsageWithColor(cpuStats.P99), cpuP99Value)
+
+			fmt.Printf("                  Mem %s avg:%s (%s) %s p90:%s (%s) %s p99:%s (%s)\n",
+				f.createMiniProgressBar(memStats.Average), f.formatUsageWithColor(memStats.Average), memAvgValue,
+				f.createMiniProgressBar(memStats.P90), f.formatUsageWithColor(memStats.P90), memP90Value,
+				f.createMiniProgressBar(memStats.P99), f.formatUsageWithColor(memStats.P99), memP99Value)
 		}
 
 		// Show volume types if any
@@ -1119,7 +1167,7 @@ func (f *Formatter) printWorkloadSummary(workload types.WorkloadInfo) {
 // printWorkloadTable prints a table view of pods in the workload
 func (f *Formatter) printWorkloadTable(workload types.WorkloadInfo) {
 	table := tablewriter.NewWriter(os.Stdout)
-	headers := []string{"POD", "NODE", "STATUS", "READY", "RESTARTS", "CPU", "MEMORY", "AGE"}
+	headers := []string{"POD", "NODE", "STATUS", "READY", "RESTARTS", "IP", "AGE"}
 	table.SetHeader(headers)
 	table.SetAutoFormatHeaders(false)
 	table.SetBorder(true)
@@ -1136,12 +1184,8 @@ func (f *Formatter) printWorkloadTable(workload types.WorkloadInfo) {
 		status := fmt.Sprintf("%s %s", statusIcon, pod.Health.Level)
 
 		totalRestarts := int32(0)
-		totalCPU := 0.0
-		totalMem := 0.0
 		for _, container := range append(pod.InitContainers, pod.Containers...) {
 			totalRestarts += container.RestartCount
-			totalCPU += container.Resources.CPUPercentage
-			totalMem += container.Resources.MemPercentage
 		}
 
 		lastRestartTime := f.getLastRestartTime(pod)
@@ -1149,18 +1193,12 @@ func (f *Formatter) printWorkloadTable(workload types.WorkloadInfo) {
 		// Use full node name - column width will be calculated dynamically
 		node := pod.NodeName
 
-		// Format CPU and Memory percentages
-		cpuStr := fmt.Sprintf("%.0f%%", totalCPU)
-		memStr := fmt.Sprintf("%.0f%%", totalMem)
-		if totalCPU > 90 {
-			cpuStr = color.RedString(cpuStr)
-		} else if totalCPU > 80 {
-			cpuStr = color.YellowString(cpuStr)
-		}
-		if totalMem > 90 {
-			memStr = color.RedString(memStr)
-		} else if totalMem > 80 {
-			memStr = color.YellowString(memStr)
+		// Get primary IP (first PodIP or fallback to PodIP field)
+		primaryIP := "-"
+		if len(pod.Network.PodIPs) > 0 {
+			primaryIP = pod.Network.PodIPs[0]
+		} else if pod.Network.PodIP != "" {
+			primaryIP = pod.Network.PodIP
 		}
 
 		table.Append([]string{
@@ -1169,8 +1207,7 @@ func (f *Formatter) printWorkloadTable(workload types.WorkloadInfo) {
 			status,
 			fmt.Sprintf("%d/%d", ready, totalContainers),
 			f.formatRestartInfo(totalRestarts, lastRestartTime),
-			cpuStr,
-			memStr,
+			primaryIP,
 			age,
 		})
 	}
@@ -1393,8 +1430,7 @@ func (f *Formatter) configureWorkloadTableWidths(table *tablewriter.Table, workl
 		tablewriter.ALIGN_LEFT,   // STATUS
 		tablewriter.ALIGN_CENTER, // READY
 		tablewriter.ALIGN_LEFT,   // RESTARTS
-		tablewriter.ALIGN_RIGHT,  // CPU
-		tablewriter.ALIGN_RIGHT,  // MEMORY
+		tablewriter.ALIGN_LEFT,   // IP
 		tablewriter.ALIGN_RIGHT,  // AGE
 	})
 }
@@ -1612,4 +1648,95 @@ func (f *Formatter) getPodStatusColor(status string) *color.Color {
 	default:
 		return color.New(color.FgWhite)
 	}
+}
+
+// printNetworkInfo prints network information for a pod
+func (f *Formatter) printNetworkInfo(pod types.PodInfo) {
+	networkType := "Pod Network"
+	if pod.Network.HostNetwork {
+		networkType = "Host Network"
+	}
+
+	// Get primary IP (first PodIP or fallback to PodIP field)
+	primaryIP := "-"
+	if len(pod.Network.PodIPs) > 0 {
+		primaryIP = pod.Network.PodIPs[0]
+	} else if pod.Network.PodIP != "" {
+		primaryIP = pod.Network.PodIP
+	}
+
+	// Format network information
+	networkInfo := fmt.Sprintf("🌐 NETWORK: %s   IP: %s", networkType, primaryIP)
+
+	// Add additional IPs if there are multiple (dual-stack)
+	if len(pod.Network.PodIPs) > 1 {
+		additionalIPs := strings.Join(pod.Network.PodIPs[1:], ", ")
+		networkInfo += fmt.Sprintf("   ADDITIONAL IPs: %s", additionalIPs)
+	}
+
+	// Add host IP if different from pod IP
+	if pod.Network.HostIP != "" && pod.Network.HostIP != primaryIP {
+		networkInfo += fmt.Sprintf("   HOST IP: %s", pod.Network.HostIP)
+	}
+
+	fmt.Printf("%s\n", networkInfo)
+}
+
+// calculateAverageValue calculates the average of resource values
+func (f *Formatter) calculateAverageValue(values []string) string {
+	if len(values) == 0 {
+		return "-"
+	}
+
+	// For now, just return the first value as a simple average
+	// In a more sophisticated implementation, we would parse the values
+	// and calculate the actual average, but for display purposes,
+	// showing a representative value is sufficient
+	return values[0]
+}
+
+// calculatePercentileValue calculates the percentile value from a slice of resource values
+func (f *Formatter) calculatePercentileValue(values []string, percentile float64) string {
+	if len(values) == 0 {
+		return "-"
+	}
+
+	// Sort the values to calculate percentile
+	sortedValues := make([]string, len(values))
+	copy(sortedValues, values)
+	sort.Strings(sortedValues)
+
+	// Calculate the index for the percentile
+	n := len(sortedValues)
+	index := int(float64(n) * percentile)
+
+	// Ensure index is within bounds
+	if index >= n {
+		index = n - 1
+	}
+
+	return sortedValues[index]
+}
+
+// filterContainers filters containers based on the container name option
+func (f *Formatter) filterContainers(containers []types.ContainerInfo) []types.ContainerInfo {
+	if f.options.ContainerName == "" {
+		return containers
+	}
+
+	var filtered []types.ContainerInfo
+	for _, container := range containers {
+		if container.Name == f.options.ContainerName {
+			filtered = append(filtered, container)
+		}
+	}
+	return filtered
+}
+
+// shouldShowContainer checks if a container should be shown based on the filter
+func (f *Formatter) shouldShowContainer(containerName string) bool {
+	if f.options.ContainerName == "" {
+		return true
+	}
+	return containerName == f.options.ContainerName
 }

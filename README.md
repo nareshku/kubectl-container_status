@@ -6,45 +6,18 @@ A kubectl plugin that provides a **clean, human-friendly view** of container-lev
 
 - 🔍 **Smart Resource Detection**: Auto-detect resource types or use explicit specification
 - 🏥 **Health Scoring**: Intelligent health analysis with visual indicators
-- 📊 **Resource Usage**: Progress bars for CPU and memory usage
-- 🔄 **Probe Status**: Display liveness, readiness, and startup probe status
-- 📁 **Volume Information**: Show mounted volumes and their types
-- 🌈 **Enhanced Visual Design**: Modern terminal output with emoji indicators, box-drawing characters, and intuitive color coding
+- 📊 **Resource Usage**: Progress bars for CPU and memory usage with actual values
+- 🌐 **Network Information**: Display host vs pod network configuration and IP addresses
+- 🎯 **Container Filtering**: Filter to show only specific containers with `-c` flag
 - 📝 **Multiple Formats**: Table, JSON, and YAML output formats
-- 🔍 **Problematic Container Detection**: Filter to show only containers and pods with issues (restarts, failures, terminating, etc.)
-- 🎯 **Flexible Targeting**: Support for Deployments, StatefulSets, DaemonSets, Jobs, and Pods
-
-## Visual Enhancements ✨
-
-This plugin features a modern, visually appealing interface designed for enhanced readability and quick issue identification:
-
-- **🎯 Enhanced Headers**: Professional layout with emoji icons and visual separators
-- **📦 Bordered Health Status**: Eye-catching health status boxes with Unicode box-drawing characters
-- **🟢 Intuitive Status Icons**: Color-coded circles for instant status recognition (🟢 healthy, 🟡 warning, 🔴 critical)
-- **📋 Smart Event Display**: Differentiated event icons (⚠️ warnings, 🚨 errors, ℹ️ info) for quick prioritization
-- **📊 Modern Progress Bars**: Clean resource usage visualization with color-coded thresholds
-- **🎨 Consistent Color Scheme**: Thoughtful use of colors and emoji for professional yet friendly appearance
+- 🔍 **Problematic Container Detection**: Filter to show only containers and pods with issues
 
 ## Installation
 
-### Build from Source
-
 ```bash
-git clone https://github.com/nareshku/kubectl-container-status
-cd kubectl-container-status
+git clone https://github.com/nareshku/kubectl-container_status
+cd kubectl-container_status
 make install
-```
-
-### Verify Installation
-
-```bash
-kubectl container-status --help
-```
-
-### Uninstall
-
-```bash
-make uninstall
 ```
 
 ## Usage
@@ -53,28 +26,26 @@ make uninstall
 
 ```bash
 # Auto-detection (plugin determines resource type)
-kubectl container-status web-backend
+kubectl container-status coredns-76f75df574-66d7q
 
 # Explicit resource type
-kubectl container-status deployment/web-backend
-kubectl container-status pod/mypod-xyz
+kubectl container-status deployment/coredns -n kube-system
+kubectl container-status pod/coredns-76f75df574-66d7q -n kube-system
 
 # Using flags
-kubectl container-status --deployment web-backend
-kubectl container-status --selector app=web,tier=backend
+kubectl container-status --deployment coredns -n kube-system
+kubectl container-status --daemonset kindnet -n kube-system
+kubectl container-status --selector k8s-app=kube-dns -n kube-system
 
-# Using different contexts
-kubectl container-status --context prod-cluster --deployment web-backend
-kubectl container-status --context staging-cluster --problematic
-
-# Show only problematic containers and pods (restarts, failures, terminating, etc.)
-kubectl container-status --problematic
+# Filter to show only a specific container
+kubectl container-status coredns-76f75df574-66d7q -n kube-system -c coredns
+kubectl container-status deployment/coredns -n kube-system -c coredns
 
 # Brief mode (summary table only)
-kubectl container-status --deployment coredns --brief
+kubectl container-status --deployment coredns -n kube-system --brief
 
-# JSON output
-kubectl container-status deployment/coredns --output json
+# Show only problematic containers
+kubectl container-status deploy/coredns --problematic
 ```
 
 ### Command Line Flags
@@ -96,56 +67,48 @@ kubectl container-status deployment/coredns --output json
 | `--sort`            | Sort by: name, restarts, cpu, memory, age                          |
 | `--env`             | Show key environment variables                                      |
 | `--events`          | Show recent Kubernetes events with enhanced visual indicators       |
-
-> **Note**: The tool now shows detailed information (volumes, environment variables, commands, labels, annotations, events) by default. Use `--brief` for a summary table view if you prefer a more compact display.
+| `-c`, `--container` | Show only the specified container                                   |
 
 ## Output Examples
 
 ### Deployment View
 ```
 ────────────────────────────────────────────────────────────
-🎯 DEPLOYMENT: coredns   REPLICAS: 2/2   🏷️  NAMESPACE: kube-system
+🎯 DEPLOYMENT: coredns   REPLICAS: 2/2   🏷️  NAMESPACE: kube-system   🌐 NETWORK: Pod
 ┌─ HEALTH STATUS ──────────────────────────────────────┐
 │ 🟢 HEALTHY    all pods running normally           (💚)     │
 └─────────────────────────────────────────────────────┘
 
-WORKLOAD SUMMARY:
-  • 2 Pods: 2 Running, 0 Warning, 0 Failed
-  • Containers:
-        1) coredns
-           Image: registry.k8s.io/coredns/coredns:v1.11.1
-           Resources: CPU: 0m/0, Memory: 0Mi/170Mi
-           Usage: CPU ▓░░░░░░░ avg:0% ▓░░░░░░░ p90:0% ▓░░░░░░░ p99:0%
-                  Mem ▓░░░░░░░ avg:0% ▓░░░░░░░ p90:0% ▓░░░░░░░ p99:0%
-  • Total Restarts: 4
-
-+──────────────────────────┬──────────────────┬────────────┬───────┬─────────────────────┬─────┬────────┬──────┐
-│           POD            │       NODE       │   STATUS   │ READY │      RESTARTS       │ CPU │ MEMORY │ AGE  │
-├──────────────────────────┼──────────────────┼────────────┼───────┼─────────────────────┼─────┼────────┼──────┤
-│ coredns-76f75df574-66d7q │ kind-control-... │ 🟢 Healthy │ 1/1   │ 2 (last 3h ago)     │ 0%  │ 0%     │ 121d │
-│ coredns-76f75df574-prcth │ kind-control-... │ 🟢 Healthy │ 1/1   │ 2 (last 5h ago)     │ 0%  │ 0%     │ 121d │
-└──────────────────────────┴──────────────────┴────────────┴───────┴─────────────────────┴─────┴────────┴──────┘
-
-📋 Workload Events (last 1h):
-  • ℹ️ Normal 5m: Started container coredns (Started) [coredns-76f75df574-66d7q]
-  • ⚠️ Warning 15m: Readiness probe failed (Unhealthy) [coredns-76f75df574-prcth]
-  • ⚠️ Warning 24m: 0/2778 nodes are available: 1 node(s) had untolerated taint (FailedScheduling) [coredns-76f75df574-abc123]
++---------------------------+---------------------------+------------+-------+-----------------+------------+------+
+| POD                       | NODE                      | STATUS     | READY | RESTARTS        | IP         | AGE  |
++---------------------------+---------------------------+------------+-------+-----------------+------------+------+
+| coredns-76f75df574-66d7q  | kind-control-plane        | 🟢 Healthy |  1/1  | 3 (last 3d ago) | 10.244.0.4 | 162d |
+| coredns-76f75df574-prcth  | kind-control-plane        | 🟢 Healthy |  1/1  | 3 (last 3d ago) | 10.244.0.2 | 162d |
++---------------------------+---------------------------+------------+-------+-----------------+------------+------+
 ```
 
-### Brief Mode
+### Pod View
 ```
 ────────────────────────────────────────────────────────────
-🎯 DEPLOYMENT: coredns   REPLICAS: 2/2   🏷️  NAMESPACE: kube-system
+🎯 POD: coredns-76f75df574-66d7q   CONTAINERS: 1/1   📍 NODE: kind-control-plane   ⏰ AGE: 162d   🏷️  NAMESPACE: kube-system   🔐 SERVICE ACCOUNT: coredns
+🌐 NETWORK: Pod Network   IP: 10.244.0.4   HOST IP: 172.18.0.2
 ┌─ HEALTH STATUS ──────────────────────────────────────┐
 │ 🟢 HEALTHY    all pods running normally           (💚)     │
 └─────────────────────────────────────────────────────┘
 
-┌──────────────────────────┬────────────┬───────┬─────────────────────┬──────┐
-│           POD            │   STATUS   │ READY │      RESTARTS       │ AGE  │
-├──────────────────────────┼────────────┼───────┼─────────────────────┼──────┤
-│ coredns-76f75df574-66d7q │ 🟢 Healthy │ 1/1   │ 2 (last 3h ago)     │ 121d │
-│ coredns-76f75df574-prcth │ 🟢 Healthy │ 1/1   │ 2 (last 5h ago)     │ 121d │
-└──────────────────────────┴────────────┴───────┴─────────────────────┴──────┘
++----------------------+------------+-----------------+----------------------+-----------+
+| CONTAINER            | STATUS     | RESTARTS        | LAST STATE           | EXIT CODE |
++----------------------+------------+-----------------+----------------------+-----------+
+| coredns              | 🟢 Running | 3 (last 3d ago) | Terminated (Unknown) |    255    |
++----------------------+------------+-----------------+----------------------+-----------+
+
+⚙️  Container: coredns
+  • Status:      🟢 Running (started 3d ago)
+  • Image:       registry.k8s.io/coredns/coredns:v1.11.1
+  • Resources:   CPU: ░░░░░░░░░░ 0% (0m/0m)
+                 Mem: ░░░░░░░░░░ 0% (0Mi/170Mi)
+  • Liveness:    ✅ HTTP /health on port 8080 (passing)
+  • Readiness:   ✅ HTTP /ready on port 8181 (passing)
 ```
 
 ## Health Status Indicators
@@ -156,171 +119,35 @@ WORKLOAD SUMMARY:
 | Degraded | 🟡 ⚠️ | Some containers restarting or probe failures |
 | Critical | 🔴 🚨 | Containers in CrashLoopBackOff or multiple failures |
 
-## Container Status Icons
+## Container Filtering
 
-| Status | Icon | Description |
-|--------|------|-------------|
-| Running | 🟢 | Container is running normally |
-| Completed | ✅ | Container completed successfully (init containers) |
-| CrashLoopBackOff/Error | 🔴 | Container is failing |
-| Waiting | 🟡 | Container waiting to start |
-| Terminated | 🔴 | Container terminated unexpectedly |
+The `-c` or `--container` flag allows you to filter the output to show only a specific container.
 
-## Event Status Icons
-
-| Event Type | Icon | Description |
-|------------|------|-------------|
-| Warning | ⚠️ | Warning events that need attention |
-| Error | 🚨 | Critical error events requiring immediate action |
-| Normal | ℹ️ | Informational events about normal operations |
-| Other | 📝 | Other event types |
-
-## Resource Usage Visualization
-
-Resource usage is displayed with 10-segment progress bars:
-- `▓` = Used capacity
-- `░` = Available capacity
-
-```
-CPU: ▓▓▓░░░░░░░ 30% (60m/200m)
-Mem: ▓▓▓▓▓▓▓▓░░ 80% (1Gi/1.25Gi) ⚠
-```
-
-## Enhanced Restart Information
-
-The restart column now shows both the restart count and the time of the last restart, providing immediate context for troubleshooting:
-
-- **No restarts**: `0`
-- **With restarts**: `3 (last 2h ago)` - shows count and when the last restart occurred
-
-This enhancement helps distinguish between historical issues (restarts that happened days ago) and current problems (recent restarts), making it easier to assess the severity and urgency of container issues.
-
-## Comprehensive Event Collection
-
-The tool captures both legacy and modern Kubernetes event formats, ensuring critical events like `FailedScheduling` are never missed:
-
-**Event Types Captured:**
-- **Scheduling Events**: `FailedScheduling`, `Scheduled`, `FailedMount`, etc.
-- **Container Events**: `Pulled`, `Created`, `Started`, `Killing`, `Unhealthy`, etc.  
-- **Pod Events**: `Created`, `Started`, `Killing`, etc.
-- **Network Events**: `CNI` related events, `NetworkNotReady`, etc.
-
-**Event Format Support:**
-- **Legacy Events**: Uses `firstTimestamp` and `lastTimestamp` fields
-- **Modern Events**: Uses `eventTime` and `series.lastObservedTime` fields for aggregated events
-
-This ensures that important troubleshooting information like pod scheduling failures, image pull issues, and resource constraints are always visible.
-
-## Problematic Container Detection
-
-The `--problematic` flag filters the output to show only containers and pods with issues. This is useful for troubleshooting and quickly identifying pods that need attention.
-
-### What Makes a Pod "Problematic"?
-
-**Pod-Level Issues:**
-- **Terminating**: Pods stuck in terminating state (with deletionTimestamp set)
-- **Failed**: Pods that have failed to run
-- **Unknown**: Pods in unknown state (usually node communication issues)  
-- **Pending**: Pods stuck in pending state (scheduling issues)
-
-**Container-Level Issues:**
-- **Restarts**: Any container with restart count > 0
-- **Non-zero Exit Codes**: Containers that have crashed or terminated abnormally
-- **Bad States**: 
-  - `CrashLoopBackOff` - Container repeatedly crashing
-  - `Error` - Container in error state
-  - `Terminated` - Regular containers that have terminated unexpectedly
-- **Failed Probes**: 
-  - Liveness probe failures (container will be restarted)
-  - Readiness probe failures (traffic won't be routed)
-- **Resource Issues**:
-  - Memory usage > 90% (approaching limits)
-  - `OOMKilled` termination (out of memory)
-
-### Examples
+### Usage Examples
 
 ```bash
-# Show all problematic pods across a deployment
-kubectl container-status --deployment webapp --problematic
+# Filter a specific container in a pod
+kubectl container-status coredns-76f75df574-66d7q -n kube-system -c coredns
 
-# Find problematic pods with brief output for quick overview
-kubectl container-status --problematic --brief
+# Filter a specific container across a workload
+kubectl container-status deployment/coredns -n kube-system -c coredns
 
-# Check specific workload for issues
-kubectl container-status ds/fluent-bit --problematic
+# Filter a daemonset container
+kubectl container-status --daemonset kindnet -n kube-system -c kindnet
+
+# Filter with selector
+kubectl container-status -l k8s-app=kube-dns -n kube-system -c coredns
 ```
 
-### Use Cases
+## Enhanced Resource Usage
 
-- **Troubleshooting**: Quickly identify pods with issues
-- **Health Monitoring**: Filter out healthy pods to focus on problems
-- **Restart Investigation**: Find containers that have been restarting
-- **Resource Issues**: Identify pods with memory/CPU problems
-- **Stuck Pods**: Find pods in terminating or pending states
+Resource usage displays both percentages and actual values:
 
-## Resource Auto-Detection
-
-The plugin automatically detects resource types in this order:
-1. Check if input matches `type/name` pattern
-2. Try to find as Pod first
-3. Try Deployment, StatefulSet, DaemonSet, Job, ReplicaSet in order
-4. If multiple matches found, show error with suggestions
-
-## Development
-
-### Prerequisites
-- Go 1.21+
-- Make (build tool)
-- Access to a Kubernetes cluster
-
-### Building
-```bash
-# Build for current platform
-make build
-
-# Build for all platforms
-make build-all
+```
+Usage: CPU ▓░░░░░░░ avg:1% (70m) ▓░░░░░░░ p90:1% (70m) ▓░░░░░░░ p99:1% (70m)
+       Mem ▓░░░░░░░ avg:1% (14Mi) ▓░░░░░░░ p90:1% (15Mi) ▓░░░░░░░ p99:1% (15Mi)
 ```
 
-### Running Tests
-```bash
-# Run all tests
-make test
-
-# Run tests with coverage report
-make test-coverage
-```
-
-### Development Commands
-```bash
-# Format code
-make fmt
-
-# Run linter
-make vet
-
-# Clean build artifacts
-make clean
-
-# Update dependencies
-make mod-tidy
-
-# Quick dev test (build and verify basic functionality)
-make dev-test
-
-# See all available commands
-make help
-```
-
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Add tests for new functionality
-4. Ensure all tests pass
-5. Submit a pull request
-
-## License
-
-This project is licensed under the Apache License 2.0 - see the [LICENSE](LICENSE) file for details.
+- **📊 Percentages**: CPU and Memory usage as percentages
+- **📏 Actual Values**: Real resource consumption (e.g., "70m" CPU, "14Mi" Memory)
+- **📈 Percentiles**: Average, P90, and P99 values for workloads with multiple pods

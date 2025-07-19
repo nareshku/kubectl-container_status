@@ -8,6 +8,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/selection"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/nareshku/kubectl-container-status/pkg/types"
@@ -93,13 +94,36 @@ func (r *Resolver) resolveBySelector(ctx context.Context, options *types.Options
 		}
 	}
 
-	// Convert map to slice
-	var workloads []types.WorkloadInfo
-	for _, workload := range workloadMap {
-		workloads = append(workloads, *workload)
+	// If we have multiple workloads, return them as is
+	if len(workloadMap) > 1 {
+		var workloads []types.WorkloadInfo
+		for _, workload := range workloadMap {
+			workloads = append(workloads, *workload)
+		}
+		return workloads, nil
 	}
 
-	return workloads, nil
+	// Create a new workload that represents the selector
+	// Parse the selector string to extract key-value pairs
+	selectorMap := make(map[string]string)
+	if requirements, selectable := selector.Requirements(); selectable {
+		for _, req := range requirements {
+			if req.Operator() == selection.Equals || req.Operator() == selection.In {
+				selectorMap[req.Key()] = req.Values().List()[0]
+			}
+		}
+	}
+
+	selectorWorkload := &types.WorkloadInfo{
+		Name:      fmt.Sprintf("selector:%s", options.Selector),
+		Kind:      "Selector",
+		Namespace: namespace,
+		Replicas:  fmt.Sprintf("%d/%d", len(pods.Items), len(pods.Items)),
+		Labels:    make(map[string]string),
+		Selector:  selectorMap,
+	}
+
+	return []types.WorkloadInfo{*selectorWorkload}, nil
 }
 
 // autoDetectAndResolve attempts to auto-detect the resource type

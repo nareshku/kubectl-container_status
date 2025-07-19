@@ -85,7 +85,7 @@ type PodInfo struct {
 	Name           string
 	Namespace      string
 	NodeName       string
-	ServiceAccount string            // Service account used by the pod
+	ServiceAccount string // Service account used by the pod
 	Age            time.Duration
 	Status         string
 	Health         HealthStatus
@@ -96,6 +96,15 @@ type PodInfo struct {
 	Labels         map[string]string // Pod labels
 	Annotations    map[string]string // Pod annotations
 	Conditions     []PodCondition    // Pod conditions (PodScheduled, etc.)
+	Network        NetworkInfo       // Network information
+}
+
+// NetworkInfo represents pod network information
+type NetworkInfo struct {
+	HostNetwork bool     // Whether pod uses host network
+	PodIP       string   // Pod IP address
+	HostIP      string   // Host IP address
+	PodIPs      []string // Pod IP addresses (for dual-stack)
 }
 
 // EventInfo represents kubernetes events
@@ -157,6 +166,9 @@ type Options struct {
 	StatefulSet string
 	Job         string
 	DaemonSet   string
+
+	// Container filter
+	ContainerName string // Filter to show only specific container
 }
 
 // ContainerStatusType represents container status types
