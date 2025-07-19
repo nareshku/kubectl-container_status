@@ -78,6 +78,15 @@ func (a *Analyzer) AnalyzePodHealth(pod types.PodInfo) types.HealthStatus {
 	score := 100 // Start with perfect score
 	var issues []string
 
+	// Check for pods stuck in initialization phase for more than 10 minutes
+	if a.isPodStuckInInitialization(pod) {
+		return types.HealthStatus{
+			Level:  string(types.HealthLevelCritical),
+			Reason: "pod stuck in initialization phase for more than 10 minutes",
+			Score:  0,
+		}
+	}
+
 	// Check container statuses
 	allContainers := append(pod.InitContainers, pod.Containers...)
 
@@ -269,6 +278,33 @@ func (a *Analyzer) hasRecentRestarts(container types.ContainerInfo) bool {
 	// Only consider restarts "recent" if the container started very recently
 	// Focus on truly current instability, not historical issues
 	return time.Since(*container.StartedAt) < 5*time.Minute
+}
+
+// isPodStuckInInitialization checks if a pod is stuck in initialization phase for more than 10 minutes
+func (a *Analyzer) isPodStuckInInitialization(pod types.PodInfo) bool {
+	// Check if pod is in initialization phase
+	if pod.Status != "Pending" {
+		return false
+	}
+
+	// Check if any containers are in PodInitializing state
+	allContainers := append(pod.InitContainers, pod.Containers...)
+	hasInitializingContainers := false
+
+	for _, container := range allContainers {
+		if container.Status == "PodInitializing" {
+			hasInitializingContainers = true
+			break
+		}
+	}
+
+	if !hasInitializingContainers {
+		return false
+	}
+
+	// Check if pod has been in this state for more than 10 minutes
+	// Use pod age as a proxy for how long it's been stuck
+	return pod.Age > 10*time.Minute
 }
 
 // GetHealthIcon returns the appropriate icon for health status
