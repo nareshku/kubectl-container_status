@@ -312,7 +312,6 @@ func TestTableConfiguration(t *testing.T) {
 	// but we can at least verify the methods don't panic
 	table := tablewriter.NewWriter(os.Stdout)
 	formatter.configureWorkloadTableWidths(table, workload)
-	formatter.configureBriefTableWidths(table)
 	formatter.configureContainerTableWidths(table)
 }
 

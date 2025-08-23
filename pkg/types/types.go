@@ -158,7 +158,6 @@ type Options struct {
 	Context           string // Kubernetes context to use
 	AllNamespaces     bool
 	Wide              bool
-	Brief             bool
 	OutputFormat      string // json, yaml, table
 	NoColor           bool
 	Problematic       bool

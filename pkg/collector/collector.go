@@ -548,8 +548,6 @@ func (c *Collector) collectPodEvents(ctx context.Context, pod *corev1.Pod, optio
 	var cutoffTime time.Time
 	if options.ShowEvents {
 		cutoffTime = time.Now().Add(-1 * time.Hour) // Last 1 hour when explicitly requested
-	} else {
-		cutoffTime = time.Now().Add(-5 * time.Minute) // Last 5 minutes for brief view
 	}
 
 	for _, event := range events.Items {
@@ -788,10 +786,7 @@ func (c *Collector) collectBulkEvents(ctx context.Context, namespace string, pod
 	var cutoffTime time.Time
 	if options.ShowEvents {
 		cutoffTime = time.Now().Add(-1 * time.Hour) // Last 1 hour when explicitly requested
-	} else {
-		cutoffTime = time.Now().Add(-5 * time.Minute) // Last 5 minutes for brief view
 	}
-
 	// Group events by pod name
 	result := make(map[string][]types.EventInfo)
 

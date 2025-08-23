@@ -41,9 +41,6 @@ kubectl container-status --selector k8s-app=kube-dns -n kube-system
 kubectl container-status coredns-76f75df574-66d7q -n kube-system -c coredns
 kubectl container-status deployment/coredns -n kube-system -c coredns
 
-# Brief mode (summary table only)
-kubectl container-status --deployment coredns -n kube-system --brief
-
 # Show only problematic containers
 kubectl container-status deploy/coredns --problematic
 ```
@@ -60,7 +57,6 @@ kubectl container-status deploy/coredns --problematic
 | `-n`, `--namespace` | Target namespace (defaults to current context)                      |
 | `--context`         | The name of the kubeconfig context to use                           |
 | `--all-namespaces`  | Show containers across all namespaces                               |
-| `--brief`           | Print just the summary table (no per-container details)             |
 | `--output`          | Output format: table, json, yaml                                   |
 | `--no-color`        | Disable colored output                                              |
 | `--problematic`     | Show only problematic containers and pods (restarts, failures, terminating, etc.) |

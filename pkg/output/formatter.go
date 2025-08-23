@@ -90,11 +90,6 @@ func (f *Formatter) formatWorkload(workload types.WorkloadInfo) error {
 		f.printLogsWarning()
 	}
 
-	if f.options.Brief {
-		// Brief mode: just show summary table
-		return f.printBriefSummary(workload)
-	}
-
 	// Check if this is a single pod to determine display mode
 	isSinglePod := workload.Kind == "Pod" && len(workload.Pods) == 1
 
@@ -276,49 +271,6 @@ func (f *Formatter) printSummary(workload types.WorkloadInfo) {
 	fmt.Printf("  • Total Restarts: %d\n\n", totalRestarts)
 }
 
-// printBriefSummary prints just a summary table
-func (f *Formatter) printBriefSummary(workload types.WorkloadInfo) error {
-	// Show problematic pods info if filtered view
-	if f.options.Problematic && len(workload.Pods) > 0 {
-		fmt.Printf("%d problematic pods shown\n\n", len(workload.Pods))
-	}
-
-	table := tablewriter.NewWriter(os.Stdout)
-	table.SetHeader([]string{"POD", "STATUS", "READY", "RESTARTS", "AGE"})
-	table.SetAutoFormatHeaders(false)
-	table.SetBorder(true)
-
-	// Configure table formatting for better width handling
-	f.configureBriefTableWidths(table)
-
-	for _, pod := range workload.Pods {
-		ready := f.getReadyCount(pod)
-		totalContainers := len(pod.Containers)
-		age := f.formatDuration(pod.Age)
-
-		statusIcon := f.analyzer.GetHealthIcon(pod.Health.Level)
-		status := fmt.Sprintf("%s %s", statusIcon, pod.Health.Level)
-
-		totalRestarts := int32(0)
-		for _, container := range append(pod.InitContainers, pod.Containers...) {
-			totalRestarts += container.RestartCount
-		}
-
-		lastRestartTime := f.getLastRestartTime(pod)
-
-		table.Append([]string{
-			pod.Name,
-			status,
-			fmt.Sprintf("%d/%d", ready, totalContainers),
-			f.formatRestartInfo(totalRestarts, lastRestartTime),
-			age,
-		})
-	}
-
-	table.Render()
-	return nil
-}
-
 // formatPodWithContext formats a single pod with context about whether it's part of a single-pod workload
 func (f *Formatter) formatPodWithContext(pod types.PodInfo, isSinglePod bool) error {
 	// For multi-pod workloads, print pod header to distinguish between pods
@@ -334,25 +286,6 @@ func (f *Formatter) formatPodWithContext(pod types.PodInfo, isSinglePod bool) er
 	// Print pod metadata (labels and annotations) if wide mode
 	if f.options.Wide {
 		f.printPodMetadata(pod)
-	}
-
-	// Print detailed container information if not brief
-	if !f.options.Brief {
-		for _, container := range pod.InitContainers {
-			if f.shouldShowContainer(container.Name) {
-				f.printContainerDetails(container)
-			}
-		}
-		for _, container := range pod.Containers {
-			if f.shouldShowContainer(container.Name) {
-				f.printContainerDetails(container)
-			}
-		}
-
-		// Print recent events
-		if f.options.ShowEvents || len(pod.Events) > 0 {
-			f.printEvents(pod.Events)
-		}
 	}
 
 	fmt.Println() // Add spacing between pods
@@ -1462,33 +1395,6 @@ func (f *Formatter) configureWorkloadTableWidths(table *tablewriter.Table, workl
 		tablewriter.ALIGN_CENTER, // READY
 		tablewriter.ALIGN_LEFT,   // RESTARTS
 		tablewriter.ALIGN_LEFT,   // IP
-		tablewriter.ALIGN_RIGHT,  // AGE
-	})
-}
-
-// configureBriefTableWidths configures optimal column widths for the brief summary table
-func (f *Formatter) configureBriefTableWidths(table *tablewriter.Table) {
-	terminalWidth := f.getTerminalWidth()
-
-	// Set table formatting options
-	table.SetAutoWrapText(false)
-	table.SetAutoFormatHeaders(true)
-	table.SetHeaderAlignment(tablewriter.ALIGN_LEFT)
-	table.SetAlignment(tablewriter.ALIGN_LEFT)
-
-	// Set minimum column widths based on terminal size
-	if terminalWidth < 100 {
-		table.SetColMinWidth(0, 20) // POD column
-	} else {
-		table.SetColMinWidth(0, 30) // POD column
-	}
-
-	// Set column alignments
-	table.SetColumnAlignment([]int{
-		tablewriter.ALIGN_LEFT,   // POD
-		tablewriter.ALIGN_LEFT,   // STATUS
-		tablewriter.ALIGN_CENTER, // READY
-		tablewriter.ALIGN_LEFT,   // RESTARTS
 		tablewriter.ALIGN_RIGHT,  // AGE
 	})
 }
