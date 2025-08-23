@@ -101,15 +101,14 @@ func (f *Formatter) formatWorkload(workload types.WorkloadInfo) error {
 				return err
 			}
 		}
+		f.printWorkloadEvents(workload)
 	} else {
 		// Multi-pod workload: use enhanced table view
 		f.printWorkloadSummary(workload)
 		f.printWorkloadTable(workload)
 
 		// Show aggregated events if requested
-		if f.options.ShowEvents {
-			f.printWorkloadEvents(workload)
-		}
+		f.printWorkloadEvents(workload)
 	}
 
 	return nil
@@ -123,7 +122,7 @@ func (f *Formatter) printWorkloadHeader(workload types.WorkloadInfo) {
 	headerColor := color.New(color.FgCyan, color.Bold)
 
 	// For single pods, show container count instead of replicas
-	replicasInfo := workload.Replicas
+	var replicasInfo string
 	if workload.Kind == "Pod" && len(workload.Pods) == 1 {
 		pod := workload.Pods[0]
 		// Only count regular containers (not init containers) to match kubectl behavior
@@ -283,10 +282,7 @@ func (f *Formatter) formatPodWithContext(pod types.PodInfo, isSinglePod bool) er
 		return err
 	}
 
-	// Print pod metadata (labels and annotations) if wide mode
-	if f.options.Wide {
-		f.printPodMetadata(pod)
-	}
+	f.printPodMetadata(pod)
 
 	fmt.Println() // Add spacing between pods
 	return nil
@@ -426,20 +422,17 @@ func (f *Formatter) printContainerDetails(container types.ContainerInfo) {
 		f.printPorts(container.Ports)
 	}
 
-	// Volumes (if wide mode)
-	if f.options.Wide && len(container.Volumes) > 0 {
+	if len(container.Volumes) > 0 {
 		f.printVolumes(container.Volumes)
 	}
 
 	// Environment variables (if requested)
-	if f.options.ShowEnv && len(container.Environment) > 0 {
+	if len(container.Environment) > 0 {
 		f.printEnvironment(container.Environment)
 	}
 
-	// Command and arguments (if wide mode)
-	if f.options.Wide {
-		f.printCommand(container.Command, container.Args)
-	}
+	// Command and arguments
+	f.printCommand(container.Command, container.Args)
 
 	// Container logs (if requested)
 	if f.options.ShowLogs && len(container.Logs) > 0 {
@@ -551,12 +544,7 @@ func (f *Formatter) printEnvironment(env []types.EnvVar) {
 	fmt.Printf("  • Environment: \n")
 
 	// Determine how many environment variables to show
-	var limit int
-	if f.options.Wide {
-		limit = 20 // Show more when --wide is used
-	} else {
-		limit = 5 // Default limit for normal view
-	}
+	limit := 20
 
 	for i, envVar := range env {
 		if i >= limit {
@@ -730,10 +718,7 @@ func (f *Formatter) printWrappedLogLine(line string, maxWidth, indentWidth int) 
 // printEvents prints recent events
 func (f *Formatter) printEvents(events []types.EventInfo) {
 	// Determine the time window message based on whether events flag is used
-	timeWindow := "last 5m"
-	if f.options.ShowEvents {
-		timeWindow = "last 1h"
-	}
+	timeWindow := "last 1h"
 
 	// Enhanced events section with better visual structure
 	eventsColor := color.New(color.FgHiBlue, color.Bold)
@@ -1228,13 +1213,13 @@ func (f *Formatter) printWorkloadEvents(workload types.WorkloadInfo) {
 				eventColor = color.New(color.FgWhite)
 			}
 
-			fmt.Printf("  • %s %s %s: %s (%s) [%s]\n",
+			fmt.Printf("  • %s %s %s [%s]: %s (%s)\n",
 				eventIcon,
 				eventColor.Sprint(event.Type),
 				f.formatDuration(age),
+				event.PodName,
 				event.Message,
-				event.Reason,
-				event.PodName)
+				event.Reason)
 		}
 
 		if len(workload.Pods) > 0 {
@@ -1450,7 +1435,7 @@ func (f *Formatter) printLogsWarning() {
 	fmt.Println()
 }
 
-// printPodMetadata prints pod metadata (labels and annotations) if wide mode
+// printPodMetadata prints pod metadata (labels and annotations)
 func (f *Formatter) printPodMetadata(pod types.PodInfo) {
 	// Print labels
 	if len(pod.Labels) > 0 {

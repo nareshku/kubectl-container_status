@@ -69,9 +69,8 @@ func (c *Collector) CollectPods(ctx context.Context, workload types.WorkloadInfo
 	}
 
 	// Collect bulk events when needed
-	needsEvents := options.ShowEvents
-	if needsEvents && len(pods) > 0 {
-		bulkEvents, err = c.collectBulkEvents(ctx, workload.Namespace, pods, options)
+	if len(pods) > 0 {
+		bulkEvents, err = c.collectBulkEvents(ctx, workload.Namespace, pods)
 		if err != nil {
 			fmt.Printf("Warning: Failed to collect bulk events: %v\n", err)
 			bulkEvents = make(map[string][]types.EventInfo)
@@ -153,8 +152,7 @@ func (c *Collector) collectPodInfo(ctx context.Context, pod *corev1.Pod, options
 
 	// For workload view, only collect detailed data if specifically requested
 	needsMetrics := !isWorkloadView || options.ShowResourceUsage
-	needsEvents := options.ShowEvents || (!isWorkloadView && len(pod.OwnerReferences) == 0)
-	needsDetailedInfo := !isWorkloadView || options.Wide || options.ShowEnv
+	needsDetailedInfo := !isWorkloadView
 
 	// Collect metrics only when needed
 	var podMetrics *types.PodMetrics
@@ -181,17 +179,14 @@ func (c *Collector) collectPodInfo(ctx context.Context, pod *corev1.Pod, options
 		podInfo.Containers = append(podInfo.Containers, containerInfo)
 	}
 
-	// Collect events only when needed
-	if needsEvents {
-		events, err := c.collectPodEvents(ctx, pod, options)
-		if err != nil {
-			// Events are optional, log warning but continue
-			if !isWorkloadView {
-				fmt.Printf("Warning: Failed to collect events for pod %s: %v\n", pod.Name, err)
-			}
+	events, err := c.collectPodEvents(ctx, pod)
+	if err != nil {
+		// Events are optional, log warning but continue
+		if !isWorkloadView {
+			fmt.Printf("Warning: Failed to collect events for pod %s: %v\n", pod.Name, err)
 		}
-		podInfo.Events = events
 	}
+	podInfo.Events = events
 
 	return podInfo, nil
 }
@@ -285,12 +280,12 @@ func (c *Collector) collectContainerInfo(ctx context.Context, container corev1.C
 	containerInfo.Probes = c.collectProbeInfo(container, containerStatus)
 
 	// Collect volume information
-	if needsDetailedInfo && options.Wide {
+	if needsDetailedInfo {
 		containerInfo.Volumes = c.collectVolumeInfo(container, pod)
 	}
 
 	// Collect environment variables
-	if needsDetailedInfo && options.ShowEnv {
+	if needsDetailedInfo {
 		containerInfo.Environment = c.collectEnvironmentInfo(container, pod)
 	}
 
@@ -533,7 +528,7 @@ func (c *Collector) isSensitiveEnvVar(name string) bool {
 }
 
 // collectPodEvents collects recent events for a pod
-func (c *Collector) collectPodEvents(ctx context.Context, pod *corev1.Pod, options *types.Options) ([]types.EventInfo, error) {
+func (c *Collector) collectPodEvents(ctx context.Context, pod *corev1.Pod) ([]types.EventInfo, error) {
 	events, err := c.clientset.CoreV1().Events(pod.Namespace).List(ctx, metav1.ListOptions{
 		FieldSelector: "involvedObject.name=" + pod.Name,
 	})
@@ -545,10 +540,7 @@ func (c *Collector) collectPodEvents(ctx context.Context, pod *corev1.Pod, optio
 
 	// Default: last 5 minutes for automatic event display
 	// With --events flag: last 1 hour for comprehensive view
-	var cutoffTime time.Time
-	if options.ShowEvents {
-		cutoffTime = time.Now().Add(-1 * time.Hour) // Last 1 hour when explicitly requested
-	}
+	cutoffTime := time.Now().Add(-1 * time.Hour) // Last 1 hour when explicitly requested
 
 	for _, event := range events.Items {
 		// Handle both old and new event formats
@@ -769,7 +761,7 @@ func (c *Collector) collectBulkMetrics(ctx context.Context, namespace string, po
 }
 
 // collectBulkEvents collects events for all pods in one API call
-func (c *Collector) collectBulkEvents(ctx context.Context, namespace string, pods []corev1.Pod, options *types.Options) (map[string][]types.EventInfo, error) {
+func (c *Collector) collectBulkEvents(ctx context.Context, namespace string, pods []corev1.Pod) (map[string][]types.EventInfo, error) {
 	// Get all events in the namespace
 	events, err := c.clientset.CoreV1().Events(namespace).List(ctx, metav1.ListOptions{})
 	if err != nil {
@@ -783,10 +775,8 @@ func (c *Collector) collectBulkEvents(ctx context.Context, namespace string, pod
 	}
 
 	// Determine time cutoff
-	var cutoffTime time.Time
-	if options.ShowEvents {
-		cutoffTime = time.Now().Add(-1 * time.Hour) // Last 1 hour when explicitly requested
-	}
+	cutoffTime := time.Now().Add(-1 * time.Hour) // Last 1 hour when explicitly requested
+
 	// Group events by pod name
 	result := make(map[string][]types.EventInfo)
 
@@ -855,7 +845,7 @@ func (c *Collector) collectPodInfoWithData(ctx context.Context, pod *corev1.Pod,
 	}
 
 	// Determine if detailed info is needed
-	needsDetailedInfo := options.SinglePodView || options.Wide || options.ShowEnv
+	needsDetailedInfo := options.SinglePodView
 
 	// Collect container information - pass pod metrics for resource calculation
 	for _, container := range pod.Spec.InitContainers {

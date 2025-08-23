@@ -48,10 +48,7 @@ Examples:
   kubectl container-status --selector app=web,tier=backend
 
   # Show only problematic containers and pods (restarts, failures, terminating, etc.)
-  kubectl container-status --problematic
-  
-  # Show recent Kubernetes events (last 1 hour)
-  kubectl container-status --events pod/mypod-xyz`,
+  kubectl container-status --problematic`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
@@ -88,8 +85,6 @@ Examples:
 	cmd.Flags().BoolVar(&options.NoColor, "no-color", false, "Disable colored output")
 	cmd.Flags().BoolVar(&options.Problematic, "problematic", false, "Show only problematic containers and pods (restarts, failures, terminating, etc.)")
 	cmd.Flags().StringVar(&options.SortBy, "sort", "name", "Sort by: name, restarts, cpu, memory, age")
-	cmd.Flags().BoolVar(&options.ShowEnv, "env", false, "Show key environment variables")
-	cmd.Flags().BoolVar(&options.ShowEvents, "events", false, "Show recent Kubernetes events related to the pods")
 	cmd.Flags().BoolVar(&options.ShowLogs, "logs", false, "Show last 10 lines of container logs (Pod resources only)")
 	cmd.Flags().StringVarP(&options.ContainerName, "container", "c", "", "Show only the specified container")
 
@@ -115,11 +110,6 @@ func runContainerStatus(options *types.Options) error {
 		options.ResourceType = "daemonset"
 		options.ResourceName = options.DaemonSet
 	}
-
-	// Enable extended information by default (previously behind --wide flag)
-	options.ShowEvents = true
-	options.ShowEnv = true
-	options.Wide = true // Set this internally for existing logic compatibility
 
 	// Initialize Kubernetes clients
 	configOverrides := &clientcmd.ConfigOverrides{}

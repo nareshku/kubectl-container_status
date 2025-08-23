@@ -60,9 +60,7 @@ kubectl container-status deploy/coredns --problematic
 | `--output`          | Output format: table, json, yaml                                   |
 | `--no-color`        | Disable colored output                                              |
 | `--problematic`     | Show only problematic containers and pods (restarts, failures, terminating, etc.) |
-| `--sort`            | Sort by: name, restarts, cpu, memory, age                          |
-| `--env`             | Show key environment variables                                      |
-| `--events`          | Show recent Kubernetes events with enhanced visual indicators       |
+| `--sort`            | Sort by: name, restarts, cpu, memory, age                          ||
 | `-c`, `--container` | Show only the specified container                                   |
 
 ## Output Examples

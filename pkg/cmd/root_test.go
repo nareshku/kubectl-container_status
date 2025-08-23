@@ -6,31 +6,6 @@ import (
 	"github.com/nareshku/kubectl-container-status/pkg/types"
 )
 
-func TestDefaultWideMode(t *testing.T) {
-	// Create options like the root command does
-	options := &types.Options{
-		Namespace:    "",
-		OutputFormat: "table",
-		SortBy:       "name",
-	}
-
-	// Simulate the logic from runContainerStatus
-	options.ShowEvents = true
-	options.ShowEnv = true
-	options.Wide = true
-
-	// Verify that wide mode features are enabled by default
-	if !options.Wide {
-		t.Error("Expected Wide to be true by default")
-	}
-	if !options.ShowEvents {
-		t.Error("Expected ShowEvents to be true by default")
-	}
-	if !options.ShowEnv {
-		t.Error("Expected ShowEnv to be true by default")
-	}
-}
-
 func TestLogsRestriction(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -46,7 +21,7 @@ func TestLogsRestriction(t *testing.T) {
 		},
 		{
 			name:           "Pod with logs disabled",
-			workloadKind:   "Pod", 
+			workloadKind:   "Pod",
 			showLogs:       false,
 			expectLogsFlag: false,
 		},

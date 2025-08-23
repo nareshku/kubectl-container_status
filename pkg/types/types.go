@@ -157,13 +157,10 @@ type Options struct {
 	Namespace         string
 	Context           string // Kubernetes context to use
 	AllNamespaces     bool
-	Wide              bool
 	OutputFormat      string // json, yaml, table
 	NoColor           bool
 	Problematic       bool
 	SortBy            string
-	ShowEnv           bool
-	ShowEvents        bool
 	ShowLogs          bool // Show recent container logs
 	ShowResourceUsage bool // Show detailed resource usage (CPU/Memory percentages)
 	SinglePodView     bool // Whether this is a single pod view (vs workload view)
