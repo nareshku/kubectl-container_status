@@ -26,5 +26,5 @@ jobs:
     - name: Test
       run: go test -v ./...
 
-        - name: Test Coverage
+    - name: Test Coverage
       run: go test -v -cover ./...
