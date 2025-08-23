@@ -294,6 +294,18 @@ func (c *Collector) collectContainerInfo(ctx context.Context, container corev1.C
 		containerInfo.Environment = c.collectEnvironmentInfo(container, pod)
 	}
 
+	// Collect exposed ports from container spec
+	if len(container.Ports) > 0 {
+		for _, p := range container.Ports {
+			containerInfo.Ports = append(containerInfo.Ports, types.PortInfo{
+				Name:          p.Name,
+				Protocol:      string(p.Protocol),
+				ContainerPort: p.ContainerPort,
+				HostPort:      p.HostPort,
+			})
+		}
+	}
+
 	// Collect logs if requested (only for running containers to avoid errors)
 	if options.ShowLogs && containerInfo.Status == string(types.ContainerStatusRunning) {
 		logs, err := c.collectContainerLogs(ctx, pod, container.Name)

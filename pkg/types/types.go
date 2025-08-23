@@ -24,6 +24,7 @@ type ContainerInfo struct {
 	Probes            ProbeInfo
 	Volumes           []VolumeInfo
 	Environment       []EnvVar
+	Ports             []PortInfo
 	TerminationReason string
 	Logs              []string // Container logs (recent lines)
 }
@@ -64,6 +65,14 @@ type VolumeInfo struct {
 	MountPath  string
 	VolumeType string
 	Details    string
+}
+
+// PortInfo represents an exposed container port
+type PortInfo struct {
+	Name          string
+	Protocol      string
+	ContainerPort int32
+	HostPort      int32
 }
 
 // EnvVar represents environment variable

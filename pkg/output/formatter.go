@@ -488,6 +488,11 @@ func (f *Formatter) printContainerDetails(container types.ContainerInfo) {
 	// Probes
 	f.printProbes(container.Probes)
 
+	// Ports
+	if len(container.Ports) > 0 {
+		f.printPorts(container.Ports)
+	}
+
 	// Volumes (if wide mode)
 	if f.options.Wide && len(container.Volumes) > 0 {
 		f.printVolumes(container.Volumes)
@@ -527,6 +532,22 @@ func (f *Formatter) printContainerDetails(container types.ContainerInfo) {
 	}
 
 	fmt.Println()
+}
+
+// printPorts prints container port information
+func (f *Formatter) printPorts(ports []types.PortInfo) {
+	fmt.Printf("  • Ports:       \n")
+	for _, p := range ports {
+		desc := fmt.Sprintf("%d/%s", p.ContainerPort, strings.ToUpper(p.Protocol))
+		if p.HostPort != 0 {
+			desc += fmt.Sprintf(" (host:%d)", p.HostPort)
+		}
+		if p.Name != "" {
+			fmt.Printf("    - %s: %s\n", p.Name, desc)
+		} else {
+			fmt.Printf("    - %s\n", desc)
+		}
+	}
 }
 
 // printResourceUsage prints resource usage with progress bars
@@ -642,9 +663,14 @@ func (f *Formatter) printCommand(command []string, args []string) {
 		indentWidth := 6 // "    - " prefix
 		maxLineWidth := terminalWidth - indentWidth
 
-		argsStr := strings.Join(args, " ")
 		fmt.Printf("    - Args:       ")
-		f.printWrappedCommandLine(argsStr, maxLineWidth-12, indentWidth+12) // 12 = len("Args:       ")
+		for i, arg := range args {
+			if i > 0 {
+				// Indent subsequent args to the same column as the first argument
+				fmt.Print(strings.Repeat(" ", indentWidth+12))
+			}
+			f.printWrappedCommandLine(arg, maxLineWidth-12, indentWidth+12) // 12 = len("Args:       ")
+		}
 	}
 }
 
@@ -993,6 +1019,7 @@ func (f *Formatter) printWorkloadSummary(workload types.WorkloadInfo) {
 		MemUsages   []float64 // All Memory usage percentages for this container type
 		CPUValues   []string  // All CPU usage values (e.g., "70m", "100m")
 		MemValues   []string  // All Memory usage values (e.g., "14Mi", "256Mi")
+		Status      string
 	})
 
 	for _, pod := range workload.Pods {
@@ -1052,6 +1079,7 @@ func (f *Formatter) printWorkloadSummary(workload types.WorkloadInfo) {
 					MemUsages   []float64
 					CPUValues   []string
 					MemValues   []string
+					Status      string
 				}{
 					Image:       imageName,
 					Type:        container.Type,
@@ -1064,6 +1092,7 @@ func (f *Formatter) printWorkloadSummary(workload types.WorkloadInfo) {
 					MemUsages:   []float64{container.Resources.MemPercentage},
 					CPUValues:   []string{container.Resources.CPUUsage},
 					MemValues:   []string{container.Resources.MemUsage},
+					Status:      container.Status,
 				}
 			}
 		}
@@ -1135,15 +1164,17 @@ func (f *Formatter) printWorkloadSummary(workload types.WorkloadInfo) {
 			memP90Value := f.calculatePercentileValue(info.MemValues, 0.9)
 			memP99Value := f.calculatePercentileValue(info.MemValues, 0.99)
 
-			fmt.Printf("           Usage: CPU %s avg:%s (%s) %s p90:%s (%s) %s p99:%s (%s)\n",
-				f.createMiniProgressBar(cpuStats.Average), f.formatUsageWithColor(cpuStats.Average), cpuAvgValue,
-				f.createMiniProgressBar(cpuStats.P90), f.formatUsageWithColor(cpuStats.P90), cpuP90Value,
-				f.createMiniProgressBar(cpuStats.P99), f.formatUsageWithColor(cpuStats.P99), cpuP99Value)
+			if info.Status == string(types.ContainerStatusRunning) {
+				fmt.Printf("           Usage: CPU %s avg:%s (%s) %s p90:%s (%s) %s p99:%s (%s)\n",
+					f.createMiniProgressBar(cpuStats.Average), f.formatUsageWithColor(cpuStats.Average), cpuAvgValue,
+					f.createMiniProgressBar(cpuStats.P90), f.formatUsageWithColor(cpuStats.P90), cpuP90Value,
+					f.createMiniProgressBar(cpuStats.P99), f.formatUsageWithColor(cpuStats.P99), cpuP99Value)
 
-			fmt.Printf("                  Mem %s avg:%s (%s) %s p90:%s (%s) %s p99:%s (%s)\n",
-				f.createMiniProgressBar(memStats.Average), f.formatUsageWithColor(memStats.Average), memAvgValue,
-				f.createMiniProgressBar(memStats.P90), f.formatUsageWithColor(memStats.P90), memP90Value,
-				f.createMiniProgressBar(memStats.P99), f.formatUsageWithColor(memStats.P99), memP99Value)
+				fmt.Printf("                  Mem %s avg:%s (%s) %s p90:%s (%s) %s p99:%s (%s)\n",
+					f.createMiniProgressBar(memStats.Average), f.formatUsageWithColor(memStats.Average), memAvgValue,
+					f.createMiniProgressBar(memStats.P90), f.formatUsageWithColor(memStats.P90), memP90Value,
+					f.createMiniProgressBar(memStats.P99), f.formatUsageWithColor(memStats.P99), memP99Value)
+			}
 		}
 
 		// Show volume types if any
