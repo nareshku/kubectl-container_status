@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	multierror "github.com/hashicorp/go-multierror"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -131,6 +132,8 @@ func (r *Resolver) autoDetectAndResolve(ctx context.Context, options *types.Opti
 	resourceName := options.ResourceName
 	namespace := options.Namespace
 
+	var errs *multierror.Error
+
 	// Try Pod first - when user specifies a pod name directly, show only that pod
 	if pod, err := r.clientset.CoreV1().Pods(namespace).Get(ctx, resourceName, metav1.GetOptions{}); err == nil {
 		// For direct pod specification, always treat as standalone pod
@@ -142,6 +145,8 @@ func (r *Resolver) autoDetectAndResolve(ctx context.Context, options *types.Opti
 			Labels:    pod.Labels,
 		}
 		return []types.WorkloadInfo{*workload}, nil
+	} else {
+		errs = multierror.Append(errs, err)
 	}
 
 	// Try Deployment
@@ -155,6 +160,8 @@ func (r *Resolver) autoDetectAndResolve(ctx context.Context, options *types.Opti
 			Selector:  deployment.Spec.Selector.MatchLabels,
 		}
 		return []types.WorkloadInfo{*workload}, nil
+	} else {
+		errs = multierror.Append(errs, err)
 	}
 
 	// Try StatefulSet
@@ -168,6 +175,8 @@ func (r *Resolver) autoDetectAndResolve(ctx context.Context, options *types.Opti
 			Selector:  statefulset.Spec.Selector.MatchLabels,
 		}
 		return []types.WorkloadInfo{*workload}, nil
+	} else {
+		errs = multierror.Append(errs, err)
 	}
 
 	// Try DaemonSet
@@ -181,6 +190,8 @@ func (r *Resolver) autoDetectAndResolve(ctx context.Context, options *types.Opti
 			Selector:  daemonset.Spec.Selector.MatchLabels,
 		}
 		return []types.WorkloadInfo{*workload}, nil
+	} else {
+		errs = multierror.Append(errs, err)
 	}
 
 	// Try Job
@@ -194,9 +205,11 @@ func (r *Resolver) autoDetectAndResolve(ctx context.Context, options *types.Opti
 			Selector:  job.Spec.Selector.MatchLabels,
 		}
 		return []types.WorkloadInfo{*workload}, nil
+	} else {
+		errs = multierror.Append(errs, err)
 	}
 
-	return nil, fmt.Errorf("resource '%s' not found as Pod, Deployment, StatefulSet, DaemonSet, or Job", resourceName)
+	return nil, fmt.Errorf("resource '%s' not found as Pod, Deployment, StatefulSet, DaemonSet, or Job: %w", resourceName, errs)
 }
 
 // resolveByType resolves resource by explicit type

@@ -59,9 +59,25 @@ func (c *Collector) CollectPods(ctx context.Context, workload types.WorkloadInfo
 	var bulkEvents map[string][]types.EventInfo
 	var err error
 
-	// For workload views or when explicitly requested, collect bulk metrics
-	if !options.SinglePodView || options.ShowResourceUsage {
-		bulkMetrics, err = c.collectBulkMetrics(ctx, workload.Namespace, pods)
+	// Decide how to collect metrics:
+	// - If we're dealing with a single pod, fetch only that pod's metrics.
+	// - If multiple pods and resource usage is requested, fetch bulk metrics using the workload's selector.
+	if len(pods) == 1 {
+		if c.metricsClient != nil {
+			metrics, mErr := c.collectPodMetrics(ctx, &pods[0])
+			if mErr != nil {
+				fmt.Printf("Warning: Failed to collect metrics for pod %s: %v\n", pods[0].Name, mErr)
+			} else if metrics != nil {
+				bulkMetrics = make(map[string]*types.PodMetrics)
+				bulkMetrics[pods[0].Name] = metrics
+			}
+		}
+	} else if options.ShowResourceUsage {
+		var labelSelector string
+		if len(workload.Selector) > 0 {
+			labelSelector = labels.SelectorFromSet(workload.Selector).String()
+		}
+		bulkMetrics, err = c.collectBulkMetrics(ctx, workload.Namespace, pods, labelSelector)
 		if err != nil {
 			fmt.Printf("Warning: Failed to collect bulk metrics: %v\n", err)
 			bulkMetrics = make(map[string]*types.PodMetrics)
@@ -587,21 +603,30 @@ func (c *Collector) collectPodMetrics(ctx context.Context, pod *corev1.Pod) (*ty
 		return nil, err
 	}
 
+	fmt.Printf("podMetrics: %+v\n", podMetrics)
 	metrics := &types.PodMetrics{
 		Containers: make(map[string]types.ContainerMetrics),
 	}
 
-	// Store metrics for each container
+	// Store metrics for each container and aggregate totals
+	totalCPU := resource.NewQuantity(0, resource.DecimalSI)
+	totalMem := resource.NewQuantity(0, resource.BinarySI)
 	for _, container := range podMetrics.Containers {
 		containerMetrics := types.ContainerMetrics{}
 		if cpu := container.Usage.Cpu(); cpu != nil {
 			containerMetrics.CPUUsage = cpu.String()
+			totalCPU.Add(*cpu)
 		}
 		if memory := container.Usage.Memory(); memory != nil {
 			containerMetrics.MemoryUsage = memory.String()
+			totalMem.Add(*memory)
 		}
 		metrics.Containers[container.Name] = containerMetrics
 	}
+
+	// Set aggregated pod-level usage
+	metrics.CPUUsage = c.formatCPUUsage(totalCPU.String())
+	metrics.MemoryUsage = c.formatMemoryUsage(totalMem.String())
 
 	return metrics, nil
 }
@@ -722,13 +747,13 @@ func (c *Collector) formatMemoryUsage(usage string) string {
 }
 
 // collectBulkMetrics collects metrics for all pods in one API call
-func (c *Collector) collectBulkMetrics(ctx context.Context, namespace string, pods []corev1.Pod) (map[string]*types.PodMetrics, error) {
+func (c *Collector) collectBulkMetrics(ctx context.Context, namespace string, pods []corev1.Pod, labelSelector string) (map[string]*types.PodMetrics, error) {
 	if c.metricsClient == nil {
 		return nil, fmt.Errorf("metrics client not available")
 	}
 
-	// Get all pod metrics in the namespace
-	podMetricsList, err := c.metricsClient.MetricsV1beta1().PodMetricses(namespace).List(ctx, metav1.ListOptions{})
+	// Get pod metrics in the namespace filtered by label selector (if provided)
+	podMetricsList, err := c.metricsClient.MetricsV1beta1().PodMetricses(namespace).List(ctx, metav1.ListOptions{LabelSelector: labelSelector})
 	if err != nil {
 		return nil, err
 	}
@@ -736,23 +761,40 @@ func (c *Collector) collectBulkMetrics(ctx context.Context, namespace string, po
 	// Create a map for fast lookup
 	result := make(map[string]*types.PodMetrics)
 
+	// Build a set of pod names we care about to filter client-side as well
+	needed := make(map[string]struct{})
+	for _, p := range pods {
+		needed[p.Name] = struct{}{}
+	}
+
 	// Convert to our format and index by pod name
 	for _, podMetrics := range podMetricsList.Items {
+		if _, ok := needed[podMetrics.Name]; !ok {
+			continue
+		}
 		metrics := &types.PodMetrics{
 			Containers: make(map[string]types.ContainerMetrics),
 		}
 
-		// Store metrics for each container
+		// Store metrics for each container and aggregate totals
+		totalCPU := resource.NewQuantity(0, resource.DecimalSI)
+		totalMem := resource.NewQuantity(0, resource.BinarySI)
 		for _, container := range podMetrics.Containers {
 			containerMetrics := types.ContainerMetrics{}
 			if cpu := container.Usage.Cpu(); cpu != nil {
 				containerMetrics.CPUUsage = cpu.String()
+				totalCPU.Add(*cpu)
 			}
 			if memory := container.Usage.Memory(); memory != nil {
 				containerMetrics.MemoryUsage = memory.String()
+				totalMem.Add(*memory)
 			}
 			metrics.Containers[container.Name] = containerMetrics
 		}
+
+		// Set aggregated pod-level usage
+		metrics.CPUUsage = c.formatCPUUsage(totalCPU.String())
+		metrics.MemoryUsage = c.formatMemoryUsage(totalMem.String())
 
 		result[podMetrics.Name] = metrics
 	}

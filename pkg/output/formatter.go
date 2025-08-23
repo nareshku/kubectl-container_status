@@ -1116,7 +1116,7 @@ func (f *Formatter) printWorkloadSummary(workload types.WorkloadInfo) {
 // printWorkloadTable prints a table view of pods in the workload
 func (f *Formatter) printWorkloadTable(workload types.WorkloadInfo) {
 	table := tablewriter.NewWriter(os.Stdout)
-	headers := []string{"POD", "NODE", "STATUS", "READY", "RESTARTS", "IP", "AGE"}
+	headers := []string{"POD", "NODE", "STATUS", "READY", "RESTARTS", "CPU (cores)", "MEMORY", "IP", "AGE"}
 	table.SetHeader(headers)
 	table.SetAutoFormatHeaders(false)
 	table.SetBorder(true)
@@ -1139,6 +1139,9 @@ func (f *Formatter) printWorkloadTable(workload types.WorkloadInfo) {
 
 		lastRestartTime := f.getLastRestartTime(pod)
 
+		cpuUsage := pod.Metrics.CPUUsage
+		memoryUsage := pod.Metrics.MemoryUsage
+
 		// Use full node name - column width will be calculated dynamically
 		node := pod.NodeName
 
@@ -1156,6 +1159,8 @@ func (f *Formatter) printWorkloadTable(workload types.WorkloadInfo) {
 			status,
 			fmt.Sprintf("%d/%d", ready, totalContainers),
 			f.formatRestartInfo(totalRestarts, lastRestartTime),
+			cpuUsage,
+			memoryUsage,
 			primaryIP,
 			age,
 		})
