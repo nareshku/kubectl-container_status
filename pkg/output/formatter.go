@@ -1139,8 +1139,17 @@ func (f *Formatter) printWorkloadTable(workload types.WorkloadInfo) {
 
 		lastRestartTime := f.getLastRestartTime(pod)
 
-		cpuUsage := pod.Metrics.CPUUsage
-		memoryUsage := pod.Metrics.MemoryUsage
+		// Safely read metrics (pod.Metrics may be nil)
+		cpuUsage := "-"
+		memoryUsage := "-"
+		if pod.Metrics != nil {
+			if pod.Metrics.CPUUsage != "" {
+				cpuUsage = pod.Metrics.CPUUsage
+			}
+			if pod.Metrics.MemoryUsage != "" {
+				memoryUsage = pod.Metrics.MemoryUsage
+			}
+		}
 
 		// Use full node name - column width will be calculated dynamically
 		node := pod.NodeName
@@ -1384,6 +1393,8 @@ func (f *Formatter) configureWorkloadTableWidths(table *tablewriter.Table, workl
 		tablewriter.ALIGN_LEFT,   // STATUS
 		tablewriter.ALIGN_CENTER, // READY
 		tablewriter.ALIGN_LEFT,   // RESTARTS
+		tablewriter.ALIGN_LEFT,   // CPU (cores)
+		tablewriter.ALIGN_LEFT,   // MEMORY
 		tablewriter.ALIGN_LEFT,   // IP
 		tablewriter.ALIGN_RIGHT,  // AGE
 	})
