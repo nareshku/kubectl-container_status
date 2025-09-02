@@ -603,7 +603,6 @@ func (c *Collector) collectPodMetrics(ctx context.Context, pod *corev1.Pod) (*ty
 		return nil, err
 	}
 
-	fmt.Printf("podMetrics: %+v\n", podMetrics)
 	metrics := &types.PodMetrics{
 		Containers: make(map[string]types.ContainerMetrics),
 	}
