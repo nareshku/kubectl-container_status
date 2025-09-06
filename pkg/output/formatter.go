@@ -284,6 +284,13 @@ func (f *Formatter) formatPodWithContext(pod types.PodInfo, isSinglePod bool) er
 
 	f.printPodMetadata(pod)
 
+	for _, container := range pod.InitContainers {
+		f.printContainerDetails(container)
+	}
+	for _, container := range pod.Containers {
+		f.printContainerDetails(container)
+	}
+
 	fmt.Println() // Add spacing between pods
 	return nil
 }
